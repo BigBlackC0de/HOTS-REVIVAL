@@ -118,7 +118,7 @@ export function Settings() {
       </Card>
 
       {bridge() && (
-        <Card title="Overlay : voix et écran">
+        <Card title="Guide vocal & mode partie">
           <OverlaySettings />
         </Card>
       )}

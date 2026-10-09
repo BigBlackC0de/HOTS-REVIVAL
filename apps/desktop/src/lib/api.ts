@@ -1,5 +1,6 @@
 import { bridge } from "./bridge";
 import type {
+  LobbyPlayer,
   RankEntry,
   AppSettings, Combo, Compliance, HeroMeta, TierListData, DraftResult, Hero, MapInfo, MatchDetail, MatchSummary, OverlayState, Profile,
   ProgressionPoint, Report, ReplayStatus,
@@ -63,6 +64,7 @@ export const api = {
     start: (map_id: string | null, my_hero_id: string | null, clock_s = 0) =>
       post<OverlayState>("/live/start", { map_id, my_hero_id, clock_s }),
     sync: (clock_s: number) => post<OverlayState>("/live/sync", { clock_s }),
+    lobby: () => request<LobbyPlayer[]>("/live/lobby"),
     hero: (hero_id: string) => post<OverlayState>("/live/hero", { hero_id }),
     levels: (body: { ally?: number; enemy?: number; ally_delta?: number; enemy_delta?: number }) =>
       post<OverlayState>("/live/levels", body),

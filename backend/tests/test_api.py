@@ -117,3 +117,17 @@ def test_key_moments_sorted_by_time():
     moments = ["20:56 – b", "6:39 – a", "13:53 – c"]
     moments.sort(key=lambda t: int(t.split(" ")[0].split(":")[0]) * 60 + int(t.split(" ")[0].split(":")[1]))
     assert moments[0].startswith("6:39") and fmt_clock(399) == "6:39"
+
+
+def test_lobby_players_history(client):
+    from app.live.session import live_session
+
+    client.post("/api/replays/import", json={})
+    live_session.on_lobby(["Azsra#2154", "Joueur0#1111", "Joueur7#2222", "Inconnu#3333"], "towers_of_doom",
+                          "appris", None, None)
+    players = {p["battletag"]: p for p in client.get("/api/live/lobby").json()}
+    assert players["Azsra#2154"]["is_me"] is True
+    assert players["Joueur0#1111"]["with"] == {"games": 1, "wins": 0}  # même équipe, défaite
+    assert players["Joueur7#2222"]["against"]["games"] == 1 and players["Joueur7#2222"]["top_heroes"] == ["Kael'thas"]
+    assert players["Inconnu#3333"]["with"]["games"] == 0
+    live_session.stop()

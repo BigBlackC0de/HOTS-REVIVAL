@@ -41,6 +41,7 @@ function createMainWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: false, // le guide vocal doit parler même quand le jeu est au premier plan
     },
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -48,6 +49,7 @@ function createMainWindow(): BrowserWindow {
     return { action: "deny" };
   });
   void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(SPLASH)}`);
+  win.webContents.on("did-finish-load", () => win.webContents.send("overlay:prefs", loadPrefs()));
   return win;
 }
 

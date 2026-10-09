@@ -5,7 +5,7 @@
  */
 import { BrowserWindow, Display, screen } from "electron";
 import path from "node:path";
-import { getPrefs } from "./prefs";
+import { getPrefs, savePrefs } from "./prefs";
 
 let overlay: BrowserWindow | null = null;
 let interactive = false;
@@ -26,13 +26,25 @@ export function placeOverlay(): void {
   overlay.setBounds({ x: workArea.x + workArea.width - WIDTH - 16, y: workArea.y + 96, width: WIDTH, height: 560 });
 }
 
-/** Fait lire un message à voix haute par l'overlay. */
+/** Fait lire un message à voix haute (par la fenêtre principale, qui porte le guide vocal). */
 export function say(text: string): void {
-  overlay?.webContents.send("overlay:say", text);
+  for (const w of BrowserWindow.getAllWindows()) w.webContents.send("overlay:say", text);
 }
 
 export function sendPrefs(): void {
-  overlay?.webContents.send("overlay:prefs", getPrefs());
+  for (const w of BrowserWindow.getAllWindows()) w.webContents.send("overlay:prefs", getPrefs());
+  applyOverlayPref();
+}
+
+/** L'overlay n'est affiché que si l'option est activée (mode partie dans l'application sinon). */
+export function applyOverlayPref(): void {
+  if (!overlay) return;
+  if (getPrefs().overlay) {
+    hiddenByUser = false;
+    overlay.showInactive();
+  } else {
+    overlay.hide();
+  }
 }
 
 export function createOverlay(loadRoute: (win: BrowserWindow, route: string) => void): BrowserWindow {
@@ -63,11 +75,11 @@ export function createOverlay(loadRoute: (win: BrowserWindow, route: string) => 
   setInteractive(false);
   loadRoute(overlay, "/overlay");
   // Affiché d'office : la fenêtre est transparente et vide tant qu'aucune partie n'est en cours.
-  overlay.once("ready-to-show", () => overlay?.showInactive());
+  overlay.once("ready-to-show", () => { if (getPrefs().overlay) overlay?.showInactive(); });
   overlay.webContents.on("did-finish-load", () => sendPrefs());
   // Le jeu peut repasser au premier plan : on réaffirme régulièrement la position de l'overlay.
   keepOnTop = setInterval(() => {
-    if (overlay && !hiddenByUser) {
+    if (overlay && !hiddenByUser && getPrefs().overlay) {
       if (!overlay.isVisible()) overlay.showInactive();
       overlay.setAlwaysOnTop(true, "screen-saver");
       overlay.moveTop();
@@ -82,6 +94,11 @@ export function createOverlay(loadRoute: (win: BrowserWindow, route: string) => 
 
 export function toggleOverlay(): boolean {
   if (!overlay) return false;
+  if (!getPrefs().overlay) {
+    savePrefs({ overlay: true });
+    sendPrefs();
+    return true;
+  }
   if (overlay.isVisible()) {
     hiddenByUser = true;
     overlay.hide();

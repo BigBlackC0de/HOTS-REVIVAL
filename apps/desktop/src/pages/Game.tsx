@@ -1,0 +1,210 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { HeroSelect } from "../components/HeroSelect";
+import { Card, Empty, List } from "../components/ui";
+import { useAsync } from "../hooks/useAsync";
+import { useLiveState } from "../hooks/liveContext";
+import { api } from "../lib/api";
+import { clock, pct } from "../lib/format";
+import type { HeroMeta, LobbyPlayer, OverlayState } from "../lib/types";
+
+const ALERT_TONE = {
+  info: "border-storm-400 bg-storm-700/20 text-storm-50",
+  warning: "border-gold-400 bg-gold-500/10 text-gold-300",
+  success: "border-emerald-400 bg-emerald-500/10 text-emerald-200",
+  danger: "border-rose-500 bg-rose-500/10 text-rose-200",
+};
+const CAMPS = [
+  { id: "siege", label: "Siège" },
+  { id: "bruiser", label: "Combattant" },
+  { id: "boss", label: "Boss" },
+  { id: "support", label: "Soutien" },
+];
+const SOURCE_LABEL: Record<string, string> = {
+  "vos replays": "calibré sur vos replays", mesuré: "mesuré sur replays réels", estimation: "estimation",
+};
+
+function Levels({ s, act }: { s: OverlayState; act: (p: Promise<OverlayState>) => void }) {
+  const estimated = s.levels.source === "estimée";
+  const diff = s.levels.ally_tier - s.levels.enemy_tier;
+  return (
+    <Card title="Niveaux & talents">
+      <div className="flex items-end justify-around text-center">
+        <div>
+          <div className="text-xs uppercase text-slate-400">Alliés</div>
+          <div className="text-5xl font-bold text-storm-300">{estimated && "≈"}{s.levels.ally}</div>
+        </div>
+        <div className={`pb-2 text-sm font-semibold ${estimated ? "text-slate-500" : diff > 0 ? "text-emerald-300" : diff < 0 ? "text-rose-300" : "text-slate-400"}`}>
+          {estimated ? "estimé" : diff > 0 ? "▲ avantage de talent" : diff < 0 ? "▼ désavantage de talent" : "talents égaux"}
+        </div>
+        <div>
+          <div className="text-xs uppercase text-slate-400">Adverses</div>
+          <div className="text-5xl font-bold text-rose-300">{estimated && "≈"}{s.levels.enemy}</div>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-4 gap-1">
+        <button className="btn-ghost justify-center py-1" onClick={() => act(api.live.levels({ ally_delta: 1 }))}>Allié +1</button>
+        <button className="btn-ghost justify-center py-1" onClick={() => act(api.live.levels({ ally_delta: -1 }))}>Allié −1</button>
+        <button className="btn-ghost justify-center py-1" onClick={() => act(api.live.levels({ enemy_delta: 1 }))}>Adv. +1</button>
+        <button className="btn-ghost justify-center py-1" onClick={() => act(api.live.levels({ enemy_delta: -1 }))}>Adv. −1</button>
+      </div>
+      <p className="mt-2 text-xs text-slate-500">
+        {estimated ? "Estimation d'après la courbe d'XP habituelle. Lecture d'écran (Paramètres) ou Ctrl+Shift+PageUp/PageDown pour les vrais niveaux."
+          : `Source : ${s.levels.source}`}
+      </p>
+    </Card>
+  );
+}
+
+function HeroCard({ s, heroes, act }: { s: OverlayState; heroes: Parameters<typeof HeroSelect>[0]["heroes"]; act: (p: Promise<OverlayState>) => void }) {
+  const meta = useAsync<HeroMeta | null>(() => (s.my_hero_id ? api.heroMeta(s.my_hero_id) : Promise.resolve(null)), [s.my_hero_id]);
+  const g = meta.data?.guide;
+  return (
+    <Card title="Votre héros">
+      <HeroSelect heroes={heroes} value={s.my_hero_id ?? ""} placeholder="— Choisir votre héros —" onChange={(id) => id && act(api.live.hero(id))} />
+      {s.talents.length > 0 && (
+        <div className="mt-3 grid grid-cols-7 gap-1.5">
+          {s.talents.map((t) => {
+            const next = s.next_talent?.level === t.level;
+            const done = t.level <= s.levels.ally;
+            return (
+              <div key={t.level} className={`rounded-md border p-1.5 text-center ${next ? "border-gold-400 bg-gold-500/10" : done ? "border-void-600 opacity-60" : "border-void-600"}`}>
+                <div className="text-[10px] text-slate-500">Niv. {t.level}</div>
+                <div className="text-xs leading-tight text-white">{t.recommended.name ?? t.recommended.talent}</div>
+                {t.recommended.winrate != null && <div className="text-[10px] text-slate-400">{pct(t.recommended.winrate)}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {s.talents[0]?.source && <p className="mt-1 text-[11px] text-slate-500">Build : {s.talents[0].source}</p>}
+      {g && (
+        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+          <div><div className="card-title mb-1">Synergies</div>{g.synergies.map((h) => h.hero).join(", ") || "—"}</div>
+          <div><div className="card-title mb-1">Contré par</div>{g.counters.map((h) => h.hero).join(", ") || "—"}</div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Players({ gameId }: { gameId: number }) {
+  const [players, setPlayers] = useState<LobbyPlayer[]>([]);
+  useEffect(() => {
+    void api.live.lobby().then(setPlayers).catch(() => setPlayers([]));
+  }, [gameId]);
+  if (!players.length) return null;
+  return (
+    <Card title="Joueurs de la partie (écran de chargement)">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+        {players.map((p) => (
+          <div key={p.battletag} className="flex justify-between gap-2">
+            <span className={p.is_me ? "font-semibold text-gold-300" : "text-white"}>{p.battletag}</span>
+            <span className="text-xs text-slate-400">
+              {p.is_me ? "vous" : [
+                p.with.games ? `avec : ${p.with.wins}/${p.with.games} V` : "",
+                p.against.games ? `contre : ${p.against.wins}/${p.against.games} V` : "",
+                p.top_heroes.length ? p.top_heroes.join(", ") : "",
+              ].filter(Boolean).join(" · ") || "jamais croisé"}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] text-slate-500">Historique tiré de vos replays importés uniquement.</p>
+    </Card>
+  );
+}
+
+/** Mode partie : s'ouvre tout seul au chargement d'une partie (alternative à l'overlay). */
+export function Game() {
+  const { state: s, setState } = useLiveState();
+  const heroes = useAsync(api.heroes);
+  const maps = useAsync(api.maps);
+  const [mapId, setMapId] = useState("");
+  const act = (p: Promise<OverlayState>) => void p.then(setState).catch(() => undefined);
+
+  if (!s || s.status === "idle")
+    return (
+      <Empty title="Aucune partie en cours">
+        <p>Cet écran s'ouvre automatiquement dès l'écran de chargement d'une partie, et le guide vocal vous accompagne pendant le jeu.</p>
+        <p className="mt-2">{s?.game_running ? "Heroes of the Storm est lancé : en attente d'une partie." : "Heroes of the Storm n'est pas lancé."}</p>
+        <button className="btn-ghost mt-4" onClick={() => act(api.live.start(null, null, 0))}>Démarrer une partie manuellement</button>
+      </Empty>
+    );
+
+  const o = s.objective;
+  return (
+    <div className="space-y-4">
+      <header className="flex items-end justify-between">
+        <div>
+          <div className="text-xs uppercase tracking-widest text-slate-400">
+            {s.status === "loading" ? "Chargement de la partie" : s.status === "ended" ? "Partie terminée" : "Partie en cours"}
+          </div>
+          <h1 className="title-display text-4xl">{s.map_name ?? "Carte inconnue"}</h1>
+          {!s.map_id && (
+            <select className="mt-2 w-72" value={mapId} onChange={(e) => { setMapId(e.target.value); act(api.live.start(e.target.value || null, null, s.clock_s ?? 0)); }}>
+              <option value="">— Indiquer la carte —</option>
+              {maps.data?.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          )}
+        </div>
+        <div className="text-right">
+          <div className="font-mono text-6xl text-white">{s.clock_source === "estimée" && "≈"}{s.status === "in_game" ? clock(s.clock_s) : "–:––"}</div>
+          <div className="mt-1 flex justify-end gap-2">
+            <button className="btn-ghost py-1" onClick={() => act(api.live.sync(0))}>Horloge à 0:00</button>
+            <button className="btn-ghost py-1 text-rose-300" onClick={() => act(api.live.stop())}>Fin</button>
+          </div>
+        </div>
+      </header>
+
+      {s.alerts.length > 0 && (
+        <div className="grid gap-2">
+          {s.alerts.map((a) => <div key={a.id} className={`rounded-lg border-l-4 px-4 py-3 text-lg font-semibold ${ALERT_TONE[a.level]}`}>{a.text}</div>)}
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-4">
+        <Card title={o ? `Objectif : ${o.name}` : "Objectif"}>
+          {o ? (
+            <>
+              <div className="font-mono text-5xl text-gold-400">{o.next_in_s !== null && o.next_in_s > 0 ? clock(o.next_in_s) : s.status === "in_game" ? "en cours" : "–:––"}</div>
+              <div className="mt-1 text-sm">Priorité : <b className="text-white">{o.priority}</b></div>
+              {!!s.upcoming_objectives?.length && (
+                <div className="mt-2 text-xs text-slate-400">Prochains : {s.upcoming_objectives.map((t) => clock(t)).join(" · ")}</div>
+              )}
+              <div className="mt-1 text-[11px] text-slate-500">Timers : {SOURCE_LABEL[o.source] ?? o.source}{o.samples ? ` (${o.samples} parties)` : ""}</div>
+              <button className="btn-ghost mt-3 w-full justify-center py-1" onClick={() => act(api.live.objectiveDone())}>Objectif terminé</button>
+            </>
+          ) : <p className="text-sm text-slate-500">Carte non reconnue.</p>}
+        </Card>
+        <Levels s={s} act={act} />
+        <Card title="Camps">
+          <div className="grid grid-cols-2 gap-1">
+            {CAMPS.map((c) => <button key={c.id} className="btn-ghost justify-center py-1" onClick={() => act(api.live.camp(c.id, "ally"))}>{c.label} pris</button>)}
+          </div>
+          <div className="mt-3 space-y-1 text-sm">
+            {s.camps.length ? s.camps.map((c) => (
+              <div key={c.camp + c.side} className="flex justify-between">
+                <span>Camp {CAMPS.find((x) => x.id === c.camp)?.label.toLowerCase() ?? c.camp}</span>
+                <span className="font-mono text-gold-300">{c.respawn_in_s !== null && c.respawn_in_s > 0 ? clock(c.respawn_in_s) : "disponible"}</span>
+              </div>
+            )) : <p className="text-xs text-slate-500">Cliquez sur un camp quand vous le voyez capturé.</p>}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div className="col-span-2"><HeroCard s={s} heroes={heroes.data ?? []} act={act} /></div>
+        <Card title="Conseils">
+          <List items={[...s.tips, ...(o?.tips ?? [])]} icon="✦" tone="text-gold-300" empty="Aucun conseil pour le moment." />
+        </Card>
+      </div>
+
+      <Players gameId={s.game_id} />
+      <p className="text-xs text-slate-500">
+        Données : fichier de chargement, horloge et niveaux (lecture d'écran, estimation ou saisie), timers mesurés sur replays. Aucune lecture du jeu.{" "}
+        <Link className="underline" to="/settings">Guide vocal et lecture d'écran</Link>
+      </p>
+    </div>
+  );
+}

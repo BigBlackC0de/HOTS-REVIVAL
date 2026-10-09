@@ -11,7 +11,15 @@ export interface Regions { clock: Rect; ally: Rect; enemy: Rect }
 export interface ScreenReading { clock: number | null; ally: number | null; enemy: number | null; at: number }
 export interface ScreenConfig { enabled: boolean; regions: Regions }
 
-export interface OverlayPrefs { voice: boolean; displayId: number | null }
+export interface OverlayPrefs {
+  voice: boolean;
+  tips: boolean;
+  voiceName: string | null;
+  rate: number;
+  volume: number;
+  overlay: boolean;
+  displayId: number | null;
+}
 
 /** Pont Electron (preload). Absent quand l'UI tourne dans un navigateur (npm run dev:web). */
 export interface HotsBridge {

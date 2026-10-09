@@ -1,28 +1,47 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { LiveContext } from "../hooks/liveContext";
 import { useLive } from "../hooks/useLive";
-import { bridge } from "../lib/bridge";
+import { useVoiceGuide } from "../hooks/useVoiceGuide";
 import { UpdateButton } from "./UpdateButton";
 
 const NAV = [
+  { to: "/game", label: "Partie en cours", icon: "▶" },
   { to: "/", label: "Tableau de bord", icon: "◆" },
   { to: "/matches", label: "Parties", icon: "⚔" },
   { to: "/meta", label: "Méta & tier lists", icon: "★" },
   { to: "/draft", label: "Draft Assistant", icon: "♜" },
   { to: "/coach", label: "Coach IA", icon: "✦" },
-  { to: "/live", label: "Overlay", icon: "◎" },
+  { to: "/live", label: "Overlay (option)", icon: "◎" },
   { to: "/settings", label: "Paramètres", icon: "⚙" },
 ];
 
 export function Layout() {
   const navigate = useNavigate();
   const [toast, setToast] = useState<{ text: string; matchId?: number } | null>(null);
-  const { state, connected } = useLive((msg) => {
-    if (msg.type === "match_imported") setToast({ text: "Nouvelle partie analysée : rapport disponible.", matchId: msg.match_id });
-    if (msg.type === "game_loading") setToast({ text: "Partie en chargement détectée — préparez votre draft." });
+  const location = useLocation();
+  const onGamePage = useRef(false);
+  onGamePage.current = location.pathname === "/game";
+  const { state, setState, connected } = useLive((msg) => {
+    if (msg.type === "match_imported") {
+      // fin de partie : depuis le mode partie, on enchaîne directement sur le rapport
+      if (onGamePage.current && msg.match_id) navigate(`/matches/${msg.match_id}`);
+      else setToast({ text: "Nouvelle partie analysée : rapport disponible.", matchId: msg.match_id });
+    }
   });
+  useVoiceGuide(state);
+
+  // Chargement d'une partie : bascule automatique sur le mode partie (une fois par partie).
+  const shownGame = useRef<number | null>(null);
+  useEffect(() => {
+    if (state && (state.status === "loading" || state.status === "in_game") && shownGame.current !== state.game_id) {
+      shownGame.current = state.game_id;
+      if (location.pathname !== "/game") navigate("/game");
+    }
+  }, [state, location.pathname, navigate]);
 
   return (
+    <LiveContext.Provider value={{ state, setState, connected }}>
     <div className="flex h-full">
       <aside className="flex w-60 shrink-0 flex-col border-r border-void-700 bg-void-950/80 p-4">
         <div className="mb-8">
@@ -48,7 +67,7 @@ export function Layout() {
             {connected ? "Moteur d'analyse actif" : "Moteur d'analyse arrêté"}
           </div>
           <div>Partie : {state?.status === "in_game" ? "en cours" : state?.status === "loading" ? "chargement" : "aucune"}</div>
-          {bridge() && <button className="btn-ghost w-full justify-center" onClick={() => bridge()?.toggleOverlay()}>Overlay (Ctrl+Shift+O)</button>}
+
           <div className="pt-2 text-[10px] leading-snug">Overlay passif conforme : aucune lecture mémoire, aucune action automatique.</div>
         </div>
       </aside>
@@ -65,5 +84,6 @@ export function Layout() {
         </div>
       )}
     </div>
+    </LiveContext.Provider>
   );
 }

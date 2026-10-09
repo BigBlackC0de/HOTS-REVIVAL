@@ -10,6 +10,7 @@ from app.db import get_db
 from app.events import hub
 from app.live.session import live_session
 from app.analytics.timings import map_timings
+from app.live.lobby_players import lobby_players
 from app.meta.service import hero_guide
 from app.schemas import LiveCampRequest, LiveHeroRequest, LiveLevelsRequest, LiveStartRequest, LiveSyncRequest
 
@@ -38,6 +39,12 @@ def recommended_build(db: Session, hero_id: str) -> list[dict]:
             build.append({"level": tier["level"], "source": "vos replays",
                           "recommended": options[0], "alternatives": options[1:3]})
     return build
+
+
+@router.get("/lobby")
+def lobby(db: Session = Depends(get_db)) -> list[dict]:
+    """Joueurs de la partie en cours et votre historique commun (replays importés)."""
+    return lobby_players(db, live_session.lobby_players)
 
 
 @router.get("/state")

@@ -3,6 +3,7 @@ import { Layout } from "./components/Layout";
 import { Coach } from "./pages/Coach";
 import { Dashboard } from "./pages/Dashboard";
 import { Draft } from "./pages/Draft";
+import { Game } from "./pages/Game";
 import { LiveControl } from "./pages/LiveControl";
 import { MatchReport } from "./pages/MatchReport";
 import { Matches } from "./pages/Matches";
@@ -17,6 +18,7 @@ export function App() {
         <Route path="/overlay" element={<Overlay />} />
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
+          <Route path="game" element={<Game />} />
           <Route path="matches" element={<Matches />} />
           <Route path="matches/:id" element={<MatchReport />} />
           <Route path="draft" element={<Draft />} />

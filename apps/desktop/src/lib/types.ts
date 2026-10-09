@@ -202,6 +202,7 @@ export interface OverlayState {
   camps: { camp: string; side: "ally" | "enemy"; respawn_in_s: number | null }[];
   talents: OverlayTalent[];
   next_talent: OverlayTalent | null;
+  upcoming_objectives?: number[];
   alerts: { id: string; text: string; level: "info" | "warning" | "success" | "danger" }[];
   tips: string[];
 }
@@ -278,4 +279,12 @@ export interface HeroMeta {
   } | null;
   talent_catalog: Record<string, { id: string; name: string; sort: number; description: string }[]>;
   replay_talent_stats: { tier: number; level: number; options: { talent: string; name: string; games: number; winrate: number; popularity: number }[] }[];
+}
+
+export interface LobbyPlayer {
+  battletag: string;
+  is_me: boolean;
+  with: { games: number; wins: number };
+  against: { games: number; wins: number };
+  top_heroes: string[];
 }

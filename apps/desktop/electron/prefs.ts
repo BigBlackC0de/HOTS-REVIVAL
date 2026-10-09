@@ -4,11 +4,16 @@ import fs from "node:fs";
 import path from "node:path";
 
 export interface OverlayPrefs {
-  voice: boolean; // alertes lues à voix haute (fonctionne même en plein écran exclusif)
+  voice: boolean; // guide vocal (fonctionne même en plein écran exclusif)
+  tips: boolean; // lire aussi les conseils (« Restez groupés »…)
+  voiceName: string | null; // voix Windows choisie (null = première voix française)
+  rate: number;
+  volume: number;
+  overlay: boolean; // fenêtre overlay par-dessus le jeu (désactivée par défaut)
   displayId: number | null; // écran de l'overlay (null = écran principal)
 }
 
-let prefs: OverlayPrefs = { voice: true, displayId: null };
+let prefs: OverlayPrefs = { voice: true, tips: true, voiceName: null, rate: 1.05, volume: 1, overlay: false, displayId: null };
 const file = () => path.join(app.getPath("userData"), "overlay-prefs.json");
 
 export function loadPrefs(): OverlayPrefs {

@@ -208,6 +208,19 @@ class LiveSession:
             return compute_overlay(self)
 
 
+def _upcoming(s: LiveSession, clock: float | None, count: int = 3) -> list[float]:
+    """Heures d'horloge projetées des prochains objectifs (estimation)."""
+    if clock is None or s.next_objective_at is None:
+        return []
+    interval = s.timings.get("objective_interval_s") or 0
+    out, t = [], s.next_objective_at
+    while len(out) < count and interval:
+        if t >= clock - 30:
+            out.append(round(t))
+        t += interval
+    return out or [round(s.next_objective_at)]
+
+
 def compute_overlay(s: LiveSession) -> dict[str, Any]:
     clock = s.clock() if s.status == "in_game" else None
     info = registry().maps.get(s.map_id or "")
@@ -300,6 +313,7 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
         "levels": {"ally": ally_level, "enemy": enemy_level, "ally_tier": ally_tier,
                    "enemy_tier": enemy_tier, "source": s.level_source},
         "objective": objective,
+        "upcoming_objectives": _upcoming(s, clock),
         "camps": camps,
         "talents": s.talent_build,
         "next_talent": next_talent,

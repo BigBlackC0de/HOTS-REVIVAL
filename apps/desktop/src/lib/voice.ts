@@ -1,24 +1,25 @@
-/** Synthèse vocale (voix française de Windows) : alertes audibles quel que soit le mode d'affichage du jeu. */
-let frenchVoice: SpeechSynthesisVoice | null = null;
+/** Synthèse vocale (voix installées sur Windows) : guide audible quel que soit le mode d'affichage du jeu. */
+export interface VoiceOptions { voiceName?: string | null; rate?: number; volume?: number }
 
-function pickVoice(): SpeechSynthesisVoice | null {
-  if (frenchVoice) return frenchVoice;
+export function listVoices(): SpeechSynthesisVoice[] {
   const voices = window.speechSynthesis?.getVoices() ?? [];
-  frenchVoice = voices.find((v) => v.lang.toLowerCase().startsWith("fr")) ?? null;
-  return frenchVoice;
+  // voix françaises d'abord
+  return [...voices].sort((a, b) => Number(b.lang.startsWith("fr")) - Number(a.lang.startsWith("fr")));
 }
 
-if (typeof window !== "undefined" && window.speechSynthesis) {
-  window.speechSynthesis.onvoiceschanged = () => { frenchVoice = null; pickVoice(); };
+function pickVoice(name?: string | null): SpeechSynthesisVoice | null {
+  const voices = listVoices();
+  return voices.find((v) => v.name === name) ?? voices.find((v) => v.lang.toLowerCase().startsWith("fr")) ?? null;
 }
 
-export function speak(text: string): void {
+export function speak(text: string, opts: VoiceOptions = {}): void {
   const synth = window.speechSynthesis;
   if (!synth) return;
-  const u = new SpeechSynthesisUtterance(text.replace(/≈/g, "environ"));
-  const voice = pickVoice();
+  const u = new SpeechSynthesisUtterance(text.replace(/≈/g, "environ").replace(/\bs\b/g, "secondes"));
+  const voice = pickVoice(opts.voiceName);
   if (voice) u.voice = voice;
   u.lang = voice?.lang ?? "fr-FR";
-  u.rate = 1.1;
+  u.rate = opts.rate ?? 1.05;
+  u.volume = opts.volume ?? 1;
   synth.speak(u);
 }
