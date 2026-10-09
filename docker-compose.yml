@@ -1,0 +1,14 @@
+# Base PostgreSQL locale pour le développement : `docker compose up -d`
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hots
+      POSTGRES_PASSWORD: hots
+      POSTGRES_DB: hots_revival
+    ports:
+      - "5432:5432"
+    volumes:
+      - hots_pg:/var/lib/postgresql/data
+volumes:
+  hots_pg:

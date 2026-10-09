@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { @apply h-full; }
+  body { @apply bg-void-900 text-slate-200 font-sans antialiased; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { @apply bg-void-600 rounded-full; }
+  select, input, textarea { @apply bg-void-800 border border-void-600 rounded-md px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-nexus-500; }
+}
+
+@layer components {
+  .card { @apply rounded-xl border border-void-700 bg-void-850/90 p-4 shadow-lg; }
+  .card-title { @apply mb-3 text-xs font-semibold uppercase tracking-widest text-storm-300; }
+  .btn { @apply inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:opacity-40; }
+  .btn-primary { @apply btn bg-gradient-to-r from-nexus-600 to-storm-600 text-white hover:shadow-glow; }
+  .btn-gold { @apply btn bg-gold-500 text-void-950 hover:bg-gold-400 hover:shadow-gold; }
+  .btn-ghost { @apply btn border border-void-600 text-slate-300 hover:border-nexus-500 hover:text-white; }
+  .chip { @apply rounded-full border border-void-600 px-2.5 py-0.5 text-xs text-slate-300; }
+  .title-display { @apply font-display tracking-wide text-gold-400; }
+}
+
+/* Overlay : fond transparent */
+body.overlay, body.overlay #root { background: transparent !important; }

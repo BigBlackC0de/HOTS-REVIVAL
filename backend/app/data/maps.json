@@ -1,0 +1,37 @@
+{
+  "_meta": {
+    "description": "Cartes Ranked/QM. Les timings sont des valeurs indicatives (secondes d'horloge de jeu) servant de valeurs par défaut à l'overlay ; ils sont recalibrés automatiquement à partir des replays importés (médiane des premiers objectifs observés). verified=false tant qu'ils n'ont pas été recoupés avec le patch courant.",
+    "camp_respawn_s": {"siege": 180, "bruiser": 240, "boss": 300, "support": 180, "other": 180},
+    "camps_first_spawn_s": 60
+  },
+  "maps": [
+    {"id": "alterac_pass", "name": "Alterac Pass", "aliases": ["Passe d'Alterac"], "objective": "Prisonniers / Cavalerie", "first_objective_s": 180, "objective_interval_s": 180, "verified": false,
+     "tips": ["Les campements de prisonniers s'ouvrent au même moment : préparez la vision et la composition du groupe 20 s avant.", "Tuer un ennemi interrompt la capture : ne capturez pas en infériorité numérique."]},
+    {"id": "battlefield_of_eternity", "name": "Battlefield of Eternity", "aliases": ["Champs de l'Éternité", "Champ de l'Éternité"], "objective": "Immortels", "first_objective_s": 120, "objective_interval_s": 180, "verified": false,
+     "tips": ["La course aux dégâts sur l'Immortel favorise les compositions à dégâts soutenus.", "Défendre l'Immortel adverse rapporte souvent plus que de forcer le combat."]},
+    {"id": "blackhearts_bay", "name": "Blackheart's Bay", "aliases": ["Baie de Cœur-Noir", "Baie de Coeur-Noir"], "objective": "Doublons", "first_objective_s": 60, "objective_interval_s": 120, "verified": false,
+     "tips": ["Ne mourez pas avec des doublons : livrez-les avant de jouer un combat incertain.", "Le coffre et les camps doublons sont des priorités de rotation."]},
+    {"id": "braxis_holdout", "name": "Braxis Holdout", "aliases": ["Bastion de Braxis", "Fort de Braxis"], "objective": "Balises / Zergs", "first_objective_s": 90, "objective_interval_s": 150, "verified": false,
+     "tips": ["Une capture à 100 % sur une seule balise vaut mieux qu'un combat perdu au centre.", "Préparez la défense de la vague zerg avec le clear de vagues."]},
+    {"id": "cursed_hollow", "name": "Cursed Hollow", "aliases": ["Val Maudit", "Le Val Maudit"], "objective": "Tributs", "first_objective_s": 105, "objective_interval_s": 180, "verified": false,
+     "tips": ["Les tributs apparaissent par paire de positions possibles : positionnez-vous avant l'annonce.", "Au 2e tribut adverse, la priorité devient le contrôle de la carte."]},
+    {"id": "dragon_shire", "name": "Dragon Shire", "aliases": ["Comté du Dragon", "Comte du Dragon"], "objective": "Sanctuaires / Chevalier-dragon", "first_objective_s": 75, "objective_interval_s": 180, "verified": false,
+     "tips": ["Tenir les deux sanctuaires demande deux joueurs solides en duel.", "Le chevalier-dragon se contre en groupe : ne le laissez pas pousser seul."]},
+    {"id": "garden_of_terror", "name": "Garden of Terror", "aliases": ["Jardins de terreur", "Jardin de terreur"], "objective": "Graines / Horreur", "first_objective_s": 90, "objective_interval_s": 180, "verified": false,
+     "tips": ["La nuit, les camps de jardin donnent les graines : groupez-vous.", "L'horreur doit cibler les forts déjà endommagés."]},
+    {"id": "hanamura_temple", "name": "Hanamura Temple", "aliases": ["Temple d'Hanamura", "Temple de Hanamura"], "objective": "Convois", "first_objective_s": 90, "objective_interval_s": 150, "verified": false,
+     "tips": ["Pousser votre convoi ou bloquer l'adverse : choisissez un seul plan.", "Les camps de soutien sont précieux pour la pression sur les structures."]},
+    {"id": "infernal_shrines", "name": "Infernal Shrines", "aliases": ["Sanctuaires infernaux", "Sanctuaires Infernaux"], "objective": "Sanctuaires / Punisseur", "first_objective_s": 90, "objective_interval_s": 120, "verified": false,
+     "tips": ["Le clear des gardiens est décisif : les compositions à zone gagnent la course.", "Utilisez un camp siège juste avant le sanctuaire pour mettre la pression."]},
+    {"id": "sky_temple", "name": "Sky Temple", "aliases": ["Temple céleste", "Temple Celeste"], "objective": "Temples", "first_objective_s": 90, "objective_interval_s": 120, "verified": false,
+     "tips": ["Contrôler le temple central rapporte le plus lorsque l'équipe est complète.", "Les gardiens de temple frappent fort : ne tankez pas sans soutien."]},
+    {"id": "tomb_of_the_spider_queen", "name": "Tomb of the Spider Queen", "aliases": ["Tombe de la Reine araignée", "Tombe de la reine Araignée"], "objective": "Gemmes / Tisseuses", "first_objective_s": 0, "objective_interval_s": 0, "verified": false,
+     "tips": ["Ne mourez pas avec des gemmes : rendez-les avant les combats.", "Les tisseuses font plus de dégâts quand une vague de sbires les accompagne."]},
+    {"id": "towers_of_doom", "name": "Towers of Doom", "aliases": ["Tours du Destin", "Tours du destin"], "objective": "Autels", "first_objective_s": 150, "objective_interval_s": 105, "verified": false,
+     "tips": ["Les autels ne se capturent qu'avec de la présence : rotation complète d'équipe.", "Le boss et le camp siège pèsent lourd sur cette carte : ne négligez pas les camps."]},
+    {"id": "volskaya_foundry", "name": "Volskaya Foundry", "aliases": ["Fonderie Volskaya", "Fonderie de Volskaya"], "objective": "Protecteur Triglav", "first_objective_s": 150, "objective_interval_s": 210, "verified": false,
+     "tips": ["La capture se gagne au contrôle de zone : privilégiez CC et sustain.", "Le second pilote (canon) est souvent le plus impactant."]},
+    {"id": "warhead_junction", "name": "Warhead Junction", "aliases": ["Site des ogives", "Croisement des ogives"], "objective": "Ogives nucléaires", "first_objective_s": 180, "objective_interval_s": 150, "verified": false,
+     "tips": ["Les ogives se gagnent aux rotations : pensez vision et mobilité.", "Une ogive se lance sur une cible immobile ou contrôlée."]}
+  ]
+}

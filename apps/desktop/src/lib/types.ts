@@ -1,0 +1,201 @@
+export type Role = "Tank" | "Bruiser" | "Ranged Assassin" | "Melee Assassin" | "Healer" | "Support";
+
+export interface Hero {
+  id: string;
+  name: string;
+  role: Role;
+  tags: string[];
+  curve: [number, number, number];
+}
+
+export interface MapInfo {
+  id: string;
+  name: string;
+  objective: string;
+  first_objective_s: number;
+  objective_interval_s: number;
+  verified: boolean;
+  tips: string[];
+}
+
+export interface HerosScore {
+  placement: number;
+  macro: number;
+  teamfight: number;
+  objectives: number;
+  survival: number;
+  draft: number;
+  overall: number;
+  algo_version: string;
+  details: Record<string, Record<string, number>>;
+}
+
+export interface Talent {
+  tier: number;
+  level: number;
+  name: string;
+}
+
+export interface MatchPlayer {
+  id: number;
+  slot: number;
+  team: number;
+  is_winner: boolean;
+  is_me: boolean;
+  name: string;
+  hero_id: string;
+  hero_name: string;
+  role: Role | null;
+  kills: number;
+  deaths: number;
+  assists: number;
+  takedowns: number;
+  hero_damage: number;
+  siege_damage: number;
+  healing: number;
+  damage_taken: number;
+  xp_contribution: number;
+  merc_camp_captures: number;
+  time_spent_dead_s: number;
+  talents: Talent[];
+  score: HerosScore | null;
+}
+
+export interface MatchSummary {
+  id: number;
+  map_id: string;
+  map_name: string;
+  game_mode: string | null;
+  played_at: string | null;
+  duration_s: number;
+  winner_team: number | null;
+  me: MatchPlayer | null;
+}
+
+export interface MatchEvent {
+  t_s: number;
+  kind: "death" | "level" | "camp" | "objective";
+  team: number | null;
+  slot: number | null;
+  payload: Record<string, unknown>;
+}
+
+export interface MatchDetail extends MatchSummary {
+  game_version: string | null;
+  team_levels: Record<string, number>;
+  players: MatchPlayer[];
+  events: MatchEvent[];
+}
+
+export interface GameSummary {
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  key_moments: string[];
+  major_mistakes: string[];
+  excellent_actions: string[];
+  improvement_plan: string[];
+}
+
+export interface ReportFacts {
+  headline: string;
+  result: "win" | "loss";
+  map: string;
+  duration: string;
+  hero: string;
+  kda: { kills: number; deaths: number; assists: number };
+  kill_participation: number;
+  time_spent_dead_s: number;
+  shares: Record<string, number>;
+  key_moments: string[];
+  strengths: string[];
+  weaknesses: string[];
+  improvement_plan: string[];
+  heros_score: (Omit<HerosScore, "algo_version" | "details">) | null;
+}
+
+export interface Report {
+  match_id: number;
+  facts: ReportFacts;
+  ai_summary: GameSummary | null;
+  model: string | null;
+}
+
+export interface Bucket {
+  games: number;
+  wins: number;
+  winrate: number | null;
+  smoothed_winrate: number;
+  avg_heros_score: number | null;
+}
+
+export interface Profile {
+  player: { name: string | null; battletag: string | null; toon_handle: string | null; rank: string | null };
+  total: Bucket;
+  by_role: Record<string, Bucket>;
+  by_hero: Record<string, Bucket & { hero: string }>;
+  best_hero: string | null;
+  worst_hero: string | null;
+  main_role: string | null;
+  secondary_role: string | null;
+  heroes_to_avoid: string[];
+  trend: { last_10_winrate: number | null; previous_10_winrate: number | null; direction: "up" | "down" | "stable" | "unknown" };
+  category_averages: Record<string, number>;
+}
+
+export interface ProgressionPoint {
+  match_id: number;
+  played_at: string | null;
+  hero: string;
+  win: boolean;
+  heros_score: number | null;
+  rolling_winrate: number;
+}
+
+export interface DraftResult {
+  strengths: string[];
+  weaknesses: string[];
+  synergies: string[];
+  threats: string[];
+  win_conditions: string[];
+  counters: string[];
+  phases: { early: number; mid: number; late: number };
+  recommendations: { hero_id: string; hero: string; role: Role; score: number; personal_winrate: number | null }[];
+  composition_score: number;
+  unknown_heroes: string[];
+}
+
+export interface TalentOption {
+  talent: string;
+  games: number;
+  winrate: number;
+  popularity: number;
+}
+
+export interface OverlayState {
+  status: "idle" | "loading" | "in_game";
+  clock_s: number | null;
+  map_id: string | null;
+  my_hero_id: string | null;
+  lobby_players: string[];
+  levels: { ally: number; enemy: number; ally_tier: number; enemy_tier: number };
+  objective: { name: string; map: string; next_in_s: number | null; estimated: boolean; priority: string; tips: string[] } | null;
+  camps: { camp: string; side: "ally" | "enemy"; respawn_in_s: number | null }[];
+  talents: { level: number; recommended: TalentOption; alternatives: TalentOption[] }[];
+  alerts: { id: string; text: string; level: "info" | "warning" | "success" | "danger" }[];
+  tips: string[];
+}
+
+export interface ReplayStatus {
+  folder: string | null;
+  folder_exists: boolean;
+  watching: boolean;
+  toon_handle: string | null;
+  counts: Record<string, number>;
+}
+
+export interface Compliance {
+  allowed_sources: Record<string, string>;
+  forbidden: string[];
+  statement: string;
+}
