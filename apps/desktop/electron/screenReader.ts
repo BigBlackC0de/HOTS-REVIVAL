@@ -1,8 +1,9 @@
 /**
  * Lecture d'écran (activée par défaut, désactivable) : pendant une partie, un flux vidéo
- * léger de l'écran du jeu (2 images/s) fournit trois petites zones publiques du HUD
- * (horloge, niveau allié, niveau adverse), lues par OCR local. L'OCR n'est relancé que si
- * une zone a changé. L'horloge est repérée automatiquement ; les niveaux suivent la géométrie
+ * léger de l'écran du jeu (720 lignes, 1 image/s) fournit trois petites zones publiques du HUD
+ * (horloge, niveau allié, niveau adverse), lues par OCR local : niveaux toutes les 2 s,
+ * horloge seulement toutes les 15 s une fois calée (l'application la fait avancer seule).
+ * L'OCR n'est relancé que si une zone a changé. L'horloge est repérée automatiquement ; les niveaux suivent la géométrie
  * fixe du HUD et l'équipe se déduit de leur couleur (bleu = la vôtre, rose = l'adversaire). Rien d'autre n'est lu (jamais
  * la mini-carte), aucune image n'est conservée, aucune touche n'est envoyée au jeu.
  */
@@ -24,14 +25,17 @@ export type ReaderState = "off" | "idle" | "starting" | "searching" | "partial" 
 
 const CONFIG_VERSION = 5;
 const DEBUG = Boolean(process.env.HOTS_SCREEN_DEBUG);
-const INTERVAL_MS = 1000;
-const CLOCK_EVERY_TICKS = 3; // horloge déjà calée : vérification toutes les 3 s suffit
-const LOCATE_AFTER_MISSES = 4;
-const LOCATE_COOLDOWN_MS = 8000;
-// Côté de votre équipe : 3 lectures concordantes (un chiffre bleu ET l'autre rose) pour le fixer,
-// puis verrouillé pour la partie (l'animation de montée de niveau change la couleur des chiffres).
+const INTERVAL_MS = 2000; // une lecture des niveaux par tick (ils changent rarement)
+const CLOCK_VERIFY_MS = 15_000; // horloge calée : simple vérification toutes les 15 s
+const CLOCK_FRESH_MS = 30_000; // calage récent : une lecture ratée ne compte pas comme un échec
+const LOCATE_AFTER_MISSES = 4; // ticks sans horloge (~8 s) avant de la rechercher
+const LOCATE_COOLDOWN_MS = 10_000; // doublé après chaque recherche vaine (max 2 min)
+const LOCATE_COOLDOWN_MAX_MS = 120_000;
+// Côté de votre équipe : un vote par lecture (un chiffre bleu ET l'autre rose), soit un toutes les 2 s.
+// 3 votes concordants (~6 s) pour le fixer, puis verrouillé pour la partie (l'animation de montée
+// de niveau change la couleur des chiffres) : 10 votes contraires d'affilée (~20 s) pour le corriger.
 const SIDE_VOTES_TO_SET = 3;
-const SIDE_VOTES_TO_FLIP = 20;
+const SIDE_VOTES_TO_FLIP = 10;
 let config: ScreenReaderConfig = { enabled: true, regions: DEFAULT_REGIONS, regionsSource: "défaut", version: CONFIG_VERSION };
 let worker: Worker | null = null;
 let timer: NodeJS.Timeout | null = null;
@@ -44,6 +48,8 @@ let tickCount = 0;
 let misses = 0;
 let blackCount = 0;
 let lastLocateAt = 0;
+let locateCooldown = LOCATE_COOLDOWN_MS;
+let hudSeen = false; // HUD de partie vu (horloge lue ou niveaux bleu/rose) : fin de l'écran de chargement
 let lastReading: ScreenReading | null = null;
 let lastOkAt: number | null = null;
 let lastCapture: NativeImage | null = null;
@@ -154,11 +160,17 @@ function releaseTextWorker(): void {
 }
 
 const LOADING_SCREEN_WINDOW_MS = 150_000;
+const LOADING_SCREEN_EVERY_MS = 6000;
+// Écran entier ramené à 1080 lignes (flux « chargement ») : à 900 lignes ou moins, l'OCR perd
+// déjà une bonne part du petit texte (essai hors ligne) ; ~35 % de calcul en moins qu'en 1440.
+const LOADING_SCREEN_SCALE = 1080 / 1440;
 let loadingSeenAt = 0;
+let loadingReadAt = 0;
 
 /** Écran de chargement : lit les pseudos et les héros des deux équipes (info publique). */
 async function readLoadingScreen(): Promise<void> {
-  const g = await grab([{ x: 0, y: 0, w: 1, h: 1 }], 1);
+  loadingReadAt = Date.now();
+  const g = await grab([{ x: 0, y: 0, w: 1, h: 1 }], LOADING_SCREEN_SCALE);
   if (!g || g.black) return;
   const frame = g.crops[0];
   const w = await getTextWorker();
@@ -278,6 +290,7 @@ async function locate(): Promise<boolean> {
       await w.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
     }
     if (found) {
+      locateCooldown = LOCATE_COOLDOWN_MS;
       config = { ...config, regions: { ...config.regions, clock: found }, regionsSource: "auto" };
       persist();
       cache.clear();
@@ -285,6 +298,8 @@ async function locate(): Promise<boolean> {
       return true;
     }
   }
+  // horloge introuvable (menu, mort, interface différente) : on espace les recherches, coûteuses
+  locateCooldown = Math.min(locateCooldown * 2, LOCATE_COOLDOWN_MAX_MS);
   return false;
 }
 
@@ -310,27 +325,32 @@ async function tick(): Promise<void> {
       clockSyncedAt = 0;
       misses = blackCount = 0;
       loadingSeenAt = Date.now();
+      loadingReadAt = 0;
+      hudSeen = false;
+      locateCooldown = LOCATE_COOLDOWN_MS;
     }
     if (live.levels?.source === "manuel") {
       // correction du joueur : elle fait foi, les lectures suivantes partent de là
       ally.sync(live.levels.ally);
       enemy.sync(live.levels.enemy);
     }
-    if (!(await startCapture())) {
+    // Compositions : seulement pendant l'écran de chargement, jamais une fois le HUD de partie vu
+    // (le statut reste « loading » tant que l'horloge n'est pas calée).
+    const loadingScreen = live.status === "loading" && !hudSeen && !live.teams?.complete
+      && Date.now() - loadingSeenAt < LOADING_SCREEN_WINDOW_MS;
+    if (!loadingScreen && textWorker) releaseTextWorker();
+    if (!(await startCapture(loadingScreen ? "chargement" : "hud"))) {
       state = "error";
       return;
     }
     if (state === "idle" || state === "error") state = "starting";
     tickCount++;
-    // Compositions : seulement pendant l'écran de chargement (jamais en pleine partie)
-    if (live.status === "loading" && !live.teams?.complete && Date.now() - loadingSeenAt < LOADING_SCREEN_WINDOW_MS) {
-      if (tickCount % 3 === 0) await readLoadingScreen();
-    } else if (textWorker) {
-      releaseTextWorker();
-    }
+    const sinceSync = Date.now() - clockSyncedAt;
+    const clockFresh = sinceSync < CLOCK_FRESH_MS;
+    const readClock = sinceSync >= CLOCK_VERIFY_MS; // pas encore calée, ou vérification périodique
     const { width: sw, height: sh } = gameDisplay().size;
     const regions = activeRegions(sw / sh);
-    const g = await grab([regions.clock, regions.ally, regions.enemy]);
+    const g = await grab(readClock ? [regions.ally, regions.enemy, regions.clock] : [regions.ally, regions.enemy]);
     if (!g) return;
     if (g.black) {
       if (++blackCount >= 3) state = "black";
@@ -338,10 +358,8 @@ async function tick(): Promise<void> {
     }
     blackCount = 0;
 
-    const clockFresh = Date.now() - clockSyncedAt < 15000;
-    const readClock = !clockFresh || tickCount % CLOCK_EVERY_TICKS === 0;
     // Votre équipe n'est pas toujours à gauche : son niveau est bleu, celui de l'adversaire rose.
-    const lc = levelCrop(g.crops[1]), rc = levelCrop(g.crops[2]);
+    const lc = levelCrop(g.crops[0]), rc = levelCrop(g.crops[1]);
     const side = allyOnRight(lc.color, rc.color);
     if (side !== null) {
       sideVotes = side === sideVote ? sideVotes + 1 : 1;
@@ -356,15 +374,17 @@ async function tick(): Promise<void> {
     const left = await readCrop("left", lc, parseLevel);
     const right = await readCrop("right", rc, parseLevel);
     const reading: ScreenReading = {
-      clock: readClock ? await readCrop("clock", binarizedCrop(g.crops[0]), parseClock) : null,
+      clock: readClock ? await readCrop("clock", binarizedCrop(g.crops[2]), parseClock) : null,
       ...assignLevels(allySide, { value: left, color: lc.color }, { value: right, color: rc.color }),
       at: Date.now(),
     };
     lastReading = reading;
     if (DEBUG) {
       console.log("[écran]", state, JSON.stringify(reading), config.regionsSource, lc.color, rc.color, allySide);
-      [binarizedCrop(g.crops[0]), lc, rc].forEach((c, i) => fs.writeFileSync(path.join(app.getPath("userData"), `crop${i}.png`), c.png()));
+      [lc, rc, ...(readClock ? [binarizedCrop(g.crops[2])] : [])].forEach((c, i) => fs.writeFileSync(path.join(app.getPath("userData"), `crop${i}.png`), c.png()));
     }
+    if (reading.clock !== null || side !== null) hudSeen = true;
+    if (loadingScreen && !hudSeen && Date.now() - loadingReadAt >= LOADING_SCREEN_EVERY_MS) await readLoadingScreen();
 
     // Horloge : deux lectures cohérentes avec le temps écoulé avant de synchroniser.
     if (reading.clock !== null) {
@@ -393,7 +413,8 @@ async function tick(): Promise<void> {
     } else if (misses >= LOCATE_AFTER_MISSES) {
       state = "searching";
     }
-    if (misses >= LOCATE_AFTER_MISSES && config.regionsSource !== "manuel" && Date.now() - lastLocateAt > LOCATE_COOLDOWN_MS) {
+    // (pas pendant l'écran de chargement : il n'y a pas encore d'horloge à trouver)
+    if (misses >= LOCATE_AFTER_MISSES && !loadingScreen && config.regionsSource !== "manuel" && Date.now() - lastLocateAt > locateCooldown) {
       if (await locate()) misses = 0;
     }
   } catch (err) {

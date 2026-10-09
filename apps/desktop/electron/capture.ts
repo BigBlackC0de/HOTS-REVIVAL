@@ -1,6 +1,8 @@
 /**
  * Flux de capture de l'écran du jeu (fenêtre invisible + capturePreload).
  * Démarré seulement pendant une partie, arrêté dès qu'elle se termine.
+ * Flux réduit (pas la définition native) et 1 image/s : le HUD se lit très bien en 720 lignes
+ * (validé hors ligne), seul l'écran de chargement (petit texte) a droit à 1080 lignes.
  */
 import { app, BrowserWindow, desktopCapturer, Display, ipcMain, screen } from "electron";
 import fs from "node:fs";
@@ -11,9 +13,15 @@ import { loadPrefs } from "./prefs";
 export interface Crop { width: number; height: number; data: Buffer } // pixels BGRA
 export interface Grab { black: boolean; width: number; height: number; crops: Crop[] }
 
-const FPS = 2;
+const FPS = 1;
+/** Hauteur du flux : HUD en jeu / écran de chargement (jamais plus que l'écran). */
+export type CaptureMode = "hud" | "chargement";
+const STREAM_HEIGHT: Record<CaptureMode, number> = { hud: 720, chargement: 1080 };
+/** Les agrandissements demandés à grab() sont exprimés pour un écran de 1440 lignes (cf. hudRegions). */
+const REF_HEIGHT = 1440;
 let win: BrowserWindow | null = null;
 let displayId: number | null = null;
+let streamHeight = 0;
 let seq = 0;
 const pending = new Map<number, (g: Grab | null) => void>();
 let started: ((ok: boolean) => void) | null = null;
@@ -72,37 +80,47 @@ export function captureError(): string | null {
   return lastError;
 }
 
-export async function startCapture(): Promise<boolean> {
+/** Taille du flux : même format que l'écran (sinon Chromium ajoute des bandes noires), dimensions paires. */
+function streamSize(display: Display, mode: CaptureMode): { width: number; height: number } {
+  const W = Math.round(display.size.width * display.scaleFactor), H = Math.round(display.size.height * display.scaleFactor);
+  if (H <= STREAM_HEIGHT[mode]) return { width: W, height: H };
+  const height = STREAM_HEIGHT[mode];
+  return { width: 2 * Math.round((height * W) / H / 2), height };
+}
+
+export async function startCapture(mode: CaptureMode = "hud"): Promise<boolean> {
   const display = gameDisplay();
-  if (captureRunning() && displayId === display.id) return true;
-  stopCapture();
+  const size = streamSize(display, mode);
+  if (captureRunning() && displayId === display.id && streamHeight === size.height) return true;
+  // même écran, autre définition : on rouvre seulement le flux dans la fenêtre existante
+  const reuse = captureRunning() && displayId === display.id;
+  if (!reuse) stopCapture();
   const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } });
   const source = sources.find((s) => s.display_id === String(display.id)) ?? sources[0];
   if (!source) {
     lastError = "aucun écran trouvé";
     return false;
   }
-  win = new BrowserWindow({
-    show: false, width: 200, height: 100, skipTaskbar: true,
-    webPreferences: {
-      preload: path.join(__dirname, "capturePreload.js"),
-      contextIsolation: true, nodeIntegration: false, sandbox: true,
-      backgroundThrottling: false,
-    },
-  });
-  win.on("closed", () => {
-    win = null;
-    displayId = null;
-  });
-  await win.loadFile(pagePath());
+  if (!reuse) {
+    win = new BrowserWindow({
+      show: false, width: 200, height: 100, skipTaskbar: true,
+      webPreferences: {
+        preload: path.join(__dirname, "capturePreload.js"),
+        contextIsolation: true, nodeIntegration: false, sandbox: true,
+        backgroundThrottling: false,
+      },
+    });
+    win.on("closed", () => {
+      win = null;
+      displayId = null;
+    });
+    await win.loadFile(pagePath());
+  }
+  if (!win || win.isDestroyed()) return false;
+  const target = win;
   const ok = await new Promise<boolean>((resolve) => {
     started = resolve;
-    win!.webContents.send("capture:start", {
-      sourceId: source.id,
-      width: Math.round(display.size.width * display.scaleFactor),
-      height: Math.round(display.size.height * display.scaleFactor),
-      fps: FPS,
-    });
+    target.webContents.send("capture:start", { sourceId: source.id, ...size, fps: FPS });
     setTimeout(() => { if (started === resolve) { started = null; resolve(false); } }, 5000);
   });
   if (!ok) {
@@ -110,6 +128,7 @@ export async function startCapture(): Promise<boolean> {
     return false;
   }
   displayId = display.id;
+  streamHeight = size.height;
   lastError = null;
   return true;
 }
@@ -118,17 +137,22 @@ export function stopCapture(): void {
   if (win && !win.isDestroyed()) win.destroy();
   win = null;
   displayId = null;
+  streamHeight = 0;
   for (const resolve of pending.values()) resolve(null);
   pending.clear();
 }
 
-/** Extrait des zones (fractions de l'écran) agrandies `scale` fois. */
+/**
+ * Extrait des zones (fractions de l'écran). `scale` = agrandissement pour un écran de 1440 lignes :
+ * la taille en pixels des zones renvoyées ne dépend donc pas de la définition du flux
+ * (HUD x3 : chiffres de niveau ~58 px après levelImage, horloge 228x84 sur un écran 16:9).
+ */
 export function grab(rects: Rect[], scale = 3): Promise<Grab | null> {
   if (!captureRunning()) return Promise.resolve(null);
   const id = ++seq;
   return new Promise((resolve) => {
     pending.set(id, resolve);
-    win!.webContents.send("capture:grab", { id, rects, scale });
+    win!.webContents.send("capture:grab", { id, rects, scale, refHeight: REF_HEIGHT });
     setTimeout(() => {
       if (pending.delete(id)) resolve(null);
     }, 3000);

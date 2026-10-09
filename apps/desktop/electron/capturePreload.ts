@@ -1,12 +1,12 @@
 /**
- * Préchargement de la fenêtre de capture (invisible). Elle ouvre UN flux vidéo de l'écran
- * du jeu à faible cadence et n'en extrait, à la demande, que de petites zones du HUD.
+ * Préchargement de la fenêtre de capture (invisible). Elle ouvre UN flux vidéo réduit de l'écran
+ * du jeu (720 lignes en jeu, 1 image/s) et n'en extrait, à la demande, que de petites zones du HUD.
  * Bien moins coûteux que de recapturer tout l'écran à chaque lecture : pas de lag en jeu.
  */
 import { ipcRenderer } from "electron";
 
 interface Rect { x: number; y: number; w: number; h: number }
-interface GrabRequest { id: number; rects: Rect[]; scale: number }
+interface GrabRequest { id: number; rects: Rect[]; scale: number; refHeight: number }
 declare class ImageCapture {
   constructor(track: MediaStreamTrack);
   grabFrame(): Promise<ImageBitmap>;
@@ -54,6 +54,8 @@ ipcRenderer.on("capture:grab", async (_e, req: GrabRequest) => {
   try {
     frame = await capture.grabFrame();
     const W = frame.width, H = frame.height;
+    // agrandissement demandé pour un écran de refHeight lignes -> facteur réel pour cette image
+    const k = (req.scale * req.refHeight) / H;
     // écran noir (plein écran non capturable) : moyenne de luminosité d'une vignette
     const thumb = new OffscreenCanvas(48, 27).getContext("2d")!;
     thumb.drawImage(frame, 0, 0, 48, 27);
@@ -65,7 +67,7 @@ ipcRenderer.on("capture:grab", async (_e, req: GrabRequest) => {
     const crops = req.rects.map((r) => {
       const sx = Math.round(r.x * W), sy = Math.round(r.y * H);
       const sw = Math.max(4, Math.round(r.w * W)), sh = Math.max(4, Math.round(r.h * H));
-      const dw = sw * req.scale, dh = sh * req.scale;
+      const dw = Math.max(1, Math.round(sw * k)), dh = Math.max(1, Math.round(sh * k));
       const ctx = new OffscreenCanvas(dw, dh).getContext("2d")!;
       ctx.imageSmoothingQuality = "high";
       ctx.drawImage(frame!, sx, sy, sw, sh, 0, 0, dw, dh);
