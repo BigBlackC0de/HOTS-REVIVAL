@@ -158,3 +158,36 @@ def test_game_already_in_progress_is_resumed(tmp_path):
     snap = s.snapshot()
     assert snap["status"] == "in_game" and snap["clock_source"] == "estimée"
     assert 230 <= snap["clock_s"] <= 250  # 300 s depuis le chargement - 65 s
+
+
+def test_levels_estimated_from_xp_curve_until_real_reading(monkeypatch):
+    from app.analytics.timings import DEFAULT_LEVEL_CURVE
+
+    s = LiveSession()
+    s.start("dragon_shire", None, 400, {"first_objective_s": 75, "objective_interval_s": 180,
+                                        "level_curve": DEFAULT_LEVEL_CURVE})
+    snap = s.snapshot()
+    assert snap["levels"]["source"] == "estimée" and snap["levels"]["ally"] == 10  # 10 à 396 s
+    assert not any(a["id"] == "talent-disadvantage" for a in snap["alerts"])
+    s.set_levels(ally=None, enemy=13, source="écran")  # vraie lecture : on quitte l'estimation
+    snap = s.snapshot()
+    assert snap["levels"]["source"] == "écran" and snap["levels"]["ally"] == 10 and snap["levels"]["enemy"] == 13
+    assert any(a["id"] == "talent-disadvantage" for a in snap["alerts"])
+
+
+def test_player_level_curve_from_replays(db):
+    from app.analytics.timings import DEFAULT_LEVEL_CURVE, level_curve
+    from app.models import Match, MatchEvent, Replay
+
+    assert level_curve(db) == DEFAULT_LEVEL_CURVE  # pas assez de parties
+    for i in range(5):
+        r = Replay(file_path=f"r{i}", file_hash=f"x{i}".ljust(64, "0"), status="parsed")
+        db.add(r)
+        db.flush()
+        m = Match(replay_id=r.id, map_id="dragon_shire", map_name="DS", duration_s=900, game_mode="Storm League")
+        db.add(m)
+        db.flush()
+        for lvl, t in ((4, 120 + i), (10, 380 + i)):
+            db.add(MatchEvent(match_id=m.id, t_s=t, kind="level", team=0, payload={"level": lvl}))
+    db.commit()
+    assert level_curve(db) == {4: 122, 10: 382}

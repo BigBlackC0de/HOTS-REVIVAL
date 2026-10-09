@@ -70,10 +70,9 @@ def sync(body: LiveSyncRequest) -> dict:
 
 @router.post("/levels")
 def levels(body: LiveLevelsRequest) -> dict:
-    ally = body.ally if body.ally is not None else (
-        live_session.ally_level + body.ally_delta if body.ally_delta else None)
-    enemy = body.enemy if body.enemy is not None else (
-        live_session.enemy_level + body.enemy_delta if body.enemy_delta else None)
+    cur_ally, cur_enemy = live_session.effective_levels()
+    ally = body.ally if body.ally is not None else (cur_ally + body.ally_delta if body.ally_delta else None)
+    enemy = body.enemy if body.enemy is not None else (cur_enemy + body.enemy_delta if body.enemy_delta else None)
     live_session.set_levels(ally, enemy, body.source)
     return live_session.snapshot()
 

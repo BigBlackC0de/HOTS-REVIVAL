@@ -16,6 +16,16 @@ from app.models import Match, MatchEvent
 from app.reference import registry
 
 MIN_SAMPLES = 3
+MIN_LEVEL_SAMPLES = 5
+CLASSIC_MODES = ("Storm League", "Quick Match", "Unranked Draft", "Hero League", "Team League", "Versus AI", "Custom")
+
+# Horloge médiane (s) à laquelle une équipe atteint chaque niveau, mesurée sur des replays
+# réels (Storm League / QM / IA). Remplacée par la courbe du joueur dès 5 parties importées.
+DEFAULT_LEVEL_CURVE: dict[int, int] = {
+    2: 63, 3: 98, 4: 132, 5: 169, 6: 202, 7: 259, 8: 311, 9: 361, 10: 396, 11: 452, 12: 525,
+    13: 591, 14: 650, 15: 721, 16: 770, 17: 848, 18: 894, 19: 929, 20: 980, 21: 1051,
+    22: 1147, 23: 1250, 24: 1356,
+}
 
 # Évènements marquant le DÉBUT d'un objectif (ou, à défaut, sa fin) par carte.
 # Les noms en commentaire « vérifié » ont été observés dans des replays réels.
@@ -84,6 +94,34 @@ def calibrate_map(db: Session, map_id: str) -> dict | None:
     }
 
 
+def level_curve(db: Session | None) -> dict[int, int]:
+    """Courbe d'XP du joueur : horloge médiane d'arrivée à chaque niveau (parties classiques)."""
+    if db is None:
+        return dict(DEFAULT_LEVEL_CURVE)
+    rows = db.execute(
+        select(MatchEvent.match_id, MatchEvent.team, MatchEvent.t_s, MatchEvent.payload)
+        .join(Match)
+        .where(MatchEvent.kind == "level", Match.game_mode.in_(CLASSIC_MODES))
+    )
+    by_level: dict[int, list[float]] = defaultdict(list)
+    matches: set[int] = set()
+    for match_id, _team, t_s, payload in rows:
+        level = int((payload or {}).get("level", 0))
+        if 2 <= level <= 30:
+            by_level[level].append(t_s)
+            matches.add(match_id)
+    if len(matches) < MIN_LEVEL_SAMPLES:
+        return dict(DEFAULT_LEVEL_CURVE)
+    curve: dict[int, int] = {}
+    last = 0
+    for level in sorted(by_level):
+        if len(by_level[level]) < MIN_LEVEL_SAMPLES:
+            break
+        t = max(last + 1, round(median(by_level[level])))  # courbe toujours croissante
+        curve[level] = last = t
+    return curve or dict(DEFAULT_LEVEL_CURVE)
+
+
 def map_timings(db: Session | None, map_id: str) -> dict:
     """Timers à utiliser pour l'overlay : calibrés si possible, sinon valeurs de référence."""
     info = registry().maps.get(map_id)
@@ -92,6 +130,7 @@ def map_timings(db: Session | None, map_id: str) -> dict:
         "objective_interval_s": info.objective_interval_s if info else None,
         "source": "mesuré" if info and info.verified else "estimation",
         "samples": 0,
+        "level_curve": level_curve(db),
     }
     if db is None or info is None:
         return base

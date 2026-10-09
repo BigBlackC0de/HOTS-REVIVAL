@@ -71,5 +71,7 @@ export class Stabilizer {
   }
 }
 
+// Première valeur : tout niveau 1-30 (l'application peut démarrer en pleine partie) ;
+// ensuite un niveau ne baisse jamais et ne saute pas de plus de 3.
 export const levelRule = (prev: number | null, next: number): boolean =>
-  prev === null ? next <= 10 : next >= prev && next - prev <= 3;
+  prev === null ? next >= 1 && next <= 30 : next >= prev && next - prev <= 3;

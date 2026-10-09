@@ -54,7 +54,7 @@ class LiveSession:
     next_objective_at: float | None = None
     ally_level: int = 1
     enemy_level: int = 1
-    level_source: str = "manuel"
+    level_source: str = "estimée"  # estimée (courbe d'XP) | manuel | écran
     camps: list[CampTimer] = field(default_factory=list)
     talent_build: list[dict] = field(default_factory=list)
     ended_at: float | None = None
@@ -121,8 +121,27 @@ class LiveSession:
                 return
             self._set_clock_locked(clock_s, source)
 
+    def estimated_level(self) -> int:
+        clock = self.clock() if self.status == "in_game" else None
+        if clock is None:
+            return 1
+        curve = self.timings.get("level_curve") or {}
+        level = 1
+        for lvl, t in sorted((int(k), v) for k, v in curve.items()):
+            if clock >= t:
+                level = lvl
+        return level
+
+    def effective_levels(self) -> tuple[int, int]:
+        if self.level_source == "estimée":
+            est = self.estimated_level()
+            return est, est
+        return self.ally_level, self.enemy_level
+
     def set_levels(self, ally: int | None, enemy: int | None, source: str = "manuel") -> None:
         with self._lock:
+            if self.level_source == "estimée":  # première vraie valeur : on part de l'estimation
+                self.ally_level = self.enemy_level = self.estimated_level()
             if ally is not None:
                 ally = max(1, min(30, ally))
                 for lvl in (10, 16, 20):
@@ -229,8 +248,16 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
                            "text": f"Camp {c.camp_type} disponible dans {int(left)} s."})
 
     # Powerspikes (niveaux d'équipe visibles en haut de l'écran)
-    ally_tier, enemy_tier = talent_tier(s.ally_level), talent_tier(s.enemy_level)
-    if s.status == "in_game":
+    ally_level, enemy_level = s.ally_level, s.enemy_level
+    estimated = s.level_source == "estimée"
+    if estimated:  # ni lecture d'écran ni saisie : courbe d'XP typique (pas d'avantage calculable)
+        ally_level = enemy_level = s.estimated_level()
+        curve = {int(k): v for k, v in (s.timings.get("level_curve") or {}).items()}
+        nxt = next((lvl for lvl in TALENT_LEVELS if lvl > ally_level and lvl in curve), None)
+        if nxt and clock is not None and 0 < curve[nxt] - clock <= 30:
+            tips.append(f"Palier de talent niveau {nxt} dans ≈ {int(curve[nxt] - clock)} s.")
+    ally_tier, enemy_tier = talent_tier(ally_level), talent_tier(enemy_level)
+    if s.status == "in_game" and not estimated:
         if enemy_tier > ally_tier:
             alerts.append({"id": "talent-disadvantage", "priority": 1, "level": "danger",
                            "text": "Désavantage de talent : évitez les combats."})
@@ -238,8 +265,8 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
         elif ally_tier > enemy_tier:
             lvl = TALENT_LEVELS[ally_tier - 1]
             tips.append(f"Avantage niveau {lvl} : forcez l'objectif ou un combat.")
-        if s.ally_level in (9, 15, 19):
-            tips.append(f"Niveau {s.ally_level + 1} imminent : attendez le talent avant d'engager.")
+        if ally_level in (9, 15, 19):
+            tips.append(f"Niveau {ally_level + 1} imminent : attendez le talent avant d'engager.")
         if objective and objective["next_in_s"] is not None and 0 < objective["next_in_s"] <= OBJECTIVE_WARNING_S:
             tips.append("Restez groupés.")
 
@@ -254,7 +281,7 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
     # Talent à venir (le plus utile en jeu) + build complet
     next_talent = None
     for t in s.talent_build:
-        if t["level"] > s.ally_level:
+        if t["level"] > ally_level:
             next_talent = t
             break
 
@@ -269,7 +296,7 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
         "map_source": s.map_source,
         "my_hero_id": s.my_hero_id,
         "lobby_players": s.lobby_players,
-        "levels": {"ally": s.ally_level, "enemy": s.enemy_level, "ally_tier": ally_tier,
+        "levels": {"ally": ally_level, "enemy": enemy_level, "ally_tier": ally_tier,
                    "enemy_tier": enemy_tier, "source": s.level_source},
         "objective": objective,
         "camps": camps,
