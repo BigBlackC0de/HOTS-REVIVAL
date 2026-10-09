@@ -97,3 +97,38 @@ def test_map_learned_from_finished_game(tmp_path, monkeypatch):
 def test_battletags_from_lobby_bytes():
     data = b"\x00\x12Azsra#2154\x00\x00Bob#12345\x00Azsra#2154"
     assert extract_battletags(data) == ["Azsra#2154", "Bob#12345"]
+
+
+def test_estimated_clock_after_loading(monkeypatch):
+    s = LiveSession()
+    s.on_lobby(["A#1"], "battlefield_of_eternity", "appris", None,
+               {"first_objective_s": 150, "objective_interval_s": 125, "source": "mesuré"})
+    assert s.snapshot()["status"] == "loading"
+    real = time.monotonic
+    monkeypatch.setattr(time, "monotonic", lambda: real() + 95)  # 30 s après les portes
+    snap = s.snapshot()
+    assert snap["status"] == "in_game" and snap["clock_source"] == "estimée"
+    assert 28 <= snap["clock_s"] <= 32
+    s.sync_clock(40, "écran")  # la lecture d'écran remplace l'estimation
+    assert s.snapshot()["clock_source"] == "écran"
+
+
+def test_lobby_poller_detects_new_file_even_if_folder_recreated(tmp_path):
+    import shutil
+
+    from app.live.battlelobby import LobbyWatcher
+
+    seen = []
+    w = LobbyWatcher(tmp_path / "Heroes of the Storm", seen.append)
+    w.prime()  # dossier absent au démarrage
+    folder = tmp_path / "Heroes of the Storm" / "TempWriteReplayP1"
+    folder.mkdir(parents=True)
+    shutil.copy(FIXTURES / "storm_league.battlelobby", folder / "replay.server.battlelobby")
+    assert w.poll() is None  # attend une taille stable
+    assert w.poll() is not None and seen[0].battletags[0] == "mumz0rsf#1442"
+    assert w.poll() is None  # pas de double détection
+    shutil.rmtree(tmp_path / "Heroes of the Storm")  # le jeu supprime le dossier…
+    folder.mkdir(parents=True)  # …puis le recrée pour la partie suivante
+    shutil.copy(FIXTURES / "storm_league.battlelobby", folder / "replay.server.battlelobby")
+    w.poll()
+    assert w.poll() is not None and len(seen) == 2

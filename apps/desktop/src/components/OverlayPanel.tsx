@@ -47,7 +47,14 @@ export function OverlayPanel({ state, interactive, heroes, maps, onState, previe
   const s = state;
   const status = s?.status ?? "idle";
 
-  if (status === "idle" && !interactive && !preview) return null;
+  if (status === "idle" && !interactive && !preview) {
+    // Jeu ouvert, pas de partie : petite pastille pour confirmer que l'overlay est actif.
+    return s?.game_running ? (
+      <div className="inline-flex items-center gap-2 rounded-full border border-nexus-600/60 bg-void-950/80 px-3 py-1 text-[11px] text-slate-300">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> HOTS REVIVAL prêt
+      </div>
+    ) : null;
+  }
 
   return (
     <div className="w-[320px] space-y-1.5 text-[13px] text-slate-100">
@@ -57,7 +64,8 @@ export function OverlayPanel({ state, interactive, heroes, maps, onState, previe
             {s?.map_name ?? (status === "idle" ? "HOTS REVIVAL" : "Carte inconnue")}
           </span>
           <span className="font-mono text-base text-white">
-            {status === "loading" ? "chargement" : status === "ended" ? "terminée" : clock(s?.clock_s)}
+            {status === "loading" ? "chargement" : status === "ended" ? "terminée"
+              : `${s?.clock_source === "estimée" ? "≈ " : ""}${clock(s?.clock_s)}`}
           </span>
         </div>
       )}

@@ -20,9 +20,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from watchdog.events import FileSystemEvent, FileSystemEventHandler
-from watchdog.observers import Observer
-
 from app.config import data_dir
 from app.reference import registry
 
@@ -159,48 +156,64 @@ def read_lobby_file(path: Path) -> LobbyInfo:
 
 
 # ---- surveillance ----------------------------------------------------------------------
+# Vérification périodique plutôt qu'une surveillance de dossier : le jeu supprime et
+# recrée %TEMP%\Heroes of the Storm, ce qui casse une surveillance classique.
 
-class _Handler(FileSystemEventHandler):
-    def __init__(self, on_lobby: Callable[[LobbyInfo], None]) -> None:
-        self.on_lobby = on_lobby
-        self._last: tuple[str, float] | None = None
-
-    def _maybe(self, path: str) -> None:
-        p = Path(path)
-        if p.name != BATTLELOBBY_NAME:
-            return
-        try:
-            stamp = (str(p), p.stat().st_mtime)
-        except OSError:
-            return
-        if stamp == self._last:
-            return
-        self._last = stamp
-        info = read_lobby_file(p)
-        if info.battletags or info.map_hash:
-            self.on_lobby(info)
-
-    def on_created(self, event: FileSystemEvent) -> None:
-        self._maybe(str(event.src_path))
-
-    def on_modified(self, event: FileSystemEvent) -> None:
-        self._maybe(str(event.src_path))
+def find_lobby_files(temp_dir: Path) -> list[Path]:
+    if not temp_dir.is_dir():
+        return []
+    return [p for p in temp_dir.glob(f"**/{BATTLELOBBY_NAME}") if p.is_file()]
 
 
 class LobbyWatcher:
-    def __init__(self, temp_dir: Path, on_lobby: Callable[[LobbyInfo], None]) -> None:
+    def __init__(self, temp_dir: Path, on_lobby: Callable[[LobbyInfo], None], interval_s: float = 1.0) -> None:
         self.temp_dir = temp_dir
         self.on_lobby = on_lobby
-        self._observer: Observer | None = None
+        self.interval_s = interval_s
+        self._stop = threading.Event()
+        self._seen: set[tuple[str, float]] = set()
+        self._pending: dict[str, tuple[float, int]] = {}
+
+    def prime(self) -> None:
+        """Ignore les fichiers déjà présents au démarrage (partie précédente)."""
+        for p in find_lobby_files(self.temp_dir):
+            try:
+                self._seen.add((str(p), p.stat().st_mtime))
+            except OSError:
+                pass
+
+    def poll(self) -> LobbyInfo | None:
+        for p in find_lobby_files(self.temp_dir):
+            try:
+                st = p.stat()
+            except OSError:
+                continue
+            key = (str(p), st.st_mtime)
+            if key in self._seen:
+                continue
+            # attendre une taille stable (fichier en cours d'écriture)
+            if self._pending.get(str(p)) != (st.st_mtime, st.st_size):
+                self._pending[str(p)] = (st.st_mtime, st.st_size)
+                continue
+            self._seen.add(key)
+            info = read_lobby_file(p)
+            if info.battletags or info.map_hash:
+                self.on_lobby(info)
+                return info
+        return None
+
+    def _loop(self) -> None:
+        self.prime()
+        while not self._stop.is_set():
+            try:
+                self.poll()
+            except Exception:
+                log.debug("Lecture du fichier de chargement impossible", exc_info=True)
+            self._stop.wait(self.interval_s)
 
     def start(self) -> None:
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
-        self._observer = Observer()
-        self._observer.schedule(_Handler(self.on_lobby), str(self.temp_dir), recursive=True)
-        self._observer.start()
+        threading.Thread(target=self._loop, daemon=True, name="lobby-watcher").start()
         log.info("Détection de partie : %s", self.temp_dir)
 
     def stop(self) -> None:
-        if self._observer:
-            self._observer.stop()
-            self._observer.join(timeout=5)
+        self._stop.set()

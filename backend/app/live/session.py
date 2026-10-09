@@ -21,6 +21,10 @@ FLASH_DURATION_S = 8
 MAX_ALERTS = 3
 ENDED_LINGER_S = 15
 LEVEL_SOURCES = ("manuel", "écran")
+# Sans lecture d'écran : on considère la partie lancée ~30 s après le début du chargement
+# et l'ouverture des portes (horloge 0:00) ~65 s après (écran de chargement + 38 s d'attente).
+LOADING_TO_GAME_S = 30
+LOBBY_TO_GATES_S = 65
 
 
 def talent_tier(level: int) -> int:
@@ -54,6 +58,7 @@ class LiveSession:
     camps: list[CampTimer] = field(default_factory=list)
     talent_build: list[dict] = field(default_factory=list)
     ended_at: float | None = None
+    loading_since: float | None = None
     _flashes: dict[str, tuple[str, str, float]] = field(default_factory=dict)
     _flashed: set[str] = field(default_factory=set)
     _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
@@ -74,6 +79,7 @@ class LiveSession:
         with self._lock:
             self._new_game_locked()
             self.status = "loading"
+            self.loading_since = time.monotonic()
             self.lobby_players, self.lobby_map_hash = battletags, map_hash
             self.map_id, self.map_source = map_id, map_source
             self.timings = timings or {}
@@ -108,9 +114,10 @@ class LiveSession:
         with self._lock:
             if self.status in ("idle", "ended"):
                 self._new_game_locked()
-            # une lecture d'écran ne corrige l'horloge que si l'écart est notable
+            # une lecture d'écran ne corrige une horloge déjà lue que si l'écart est notable
             current = self.clock()
-            if source == "écran" and current is not None and abs(current - clock_s) < 2:
+            if (source == "écran" and self.clock_source == "écran" and current is not None
+                    and abs(current - clock_s) < 2):
                 return
             self._set_clock_locked(clock_s, source)
 
@@ -172,8 +179,13 @@ class LiveSession:
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
-            if self.status == "ended" and self.ended_at and time.monotonic() - self.ended_at > ENDED_LINGER_S:
+            now = time.monotonic()
+            if self.status == "ended" and self.ended_at and now - self.ended_at > ENDED_LINGER_S:
                 self._new_game_locked()
+            if (self.status == "loading" and self.clock_anchor is None and self.loading_since
+                    and now - self.loading_since >= LOADING_TO_GAME_S):
+                # horloge estimée, recalée par la lecture d'écran ou Ctrl+Shift+S
+                self._set_clock_locked(now - (self.loading_since + LOBBY_TO_GATES_S), "estimée")
             return compute_overlay(self)
 
 
