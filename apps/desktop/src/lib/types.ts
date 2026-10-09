@@ -167,21 +167,38 @@ export interface DraftResult {
 
 export interface TalentOption {
   talent: string;
-  games: number;
-  winrate: number;
-  popularity: number;
+  name?: string;
+  games?: number;
+  winrate?: number | null;
+  popularity?: number | null;
+}
+
+export interface OverlayTalent {
+  level: number;
+  recommended: TalentOption;
+  alternatives: TalentOption[];
+  source?: string;
 }
 
 export interface OverlayState {
-  status: "idle" | "loading" | "in_game";
+  status: "idle" | "loading" | "in_game" | "ended";
+  game_id: number;
+  game_running: boolean;
   clock_s: number | null;
+  clock_source: string | null;
   map_id: string | null;
+  map_name: string | null;
+  map_source: string | null;
   my_hero_id: string | null;
   lobby_players: string[];
-  levels: { ally: number; enemy: number; ally_tier: number; enemy_tier: number };
-  objective: { name: string; map: string; next_in_s: number | null; estimated: boolean; priority: string; tips: string[] } | null;
+  levels: { ally: number; enemy: number; ally_tier: number; enemy_tier: number; source: string };
+  objective: {
+    name: string; map: string; next_in_s: number | null; source: string; samples: number;
+    priority: string; tips: string[];
+  } | null;
   camps: { camp: string; side: "ally" | "enemy"; respawn_in_s: number | null }[];
-  talents: { level: number; recommended: TalentOption; alternatives: TalentOption[] }[];
+  talents: OverlayTalent[];
+  next_talent: OverlayTalent | null;
   alerts: { id: string; text: string; level: "info" | "warning" | "success" | "danger" }[];
   tips: string[];
 }

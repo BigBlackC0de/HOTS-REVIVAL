@@ -1,47 +1,184 @@
 """Détection du lancement d'une partie via le fichier battlelobby.
 
-Au chargement, le jeu écrit `replay.server.battlelobby` dans
-%TEMP%\\Heroes of the Storm\\...\\TempWriteReplayP*\\. On ne s'en sert que comme
-signal de début de partie et pour lister les BattleTags affichés à l'écran de
-chargement. Aucune autre donnée temps réel n'est lue.
+Au début de l'écran de chargement, le jeu écrit `replay.server.battlelobby` dans
+%TEMP%\\Heroes of the Storm\\TempWriteReplayP*\\. On y lit uniquement ce que l'écran
+de chargement affiche déjà : les BattleTags et la carte. La carte est identifiée par
+le dernier fichier `.s2ma` (cache Battle.net) de la liste des dépendances :
+  1. si cette empreinte a déjà été associée à une carte (apprise à la fin d'une partie
+     précédente grâce au replay), on la reconnaît immédiatement ;
+  2. sinon on lit l'identifiant de carte dans le fichier .s2ma du cache Battle.net local.
+Aucune autre donnée temps réel n'est lue.
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
+import threading
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from app.config import data_dir
+from app.reference import registry
+
 log = logging.getLogger(__name__)
 
 BATTLELOBBY_NAME = "replay.server.battlelobby"
 _BATTLETAG_RE = re.compile(rb"([A-Za-z\xc0-\xff][\w\x80-\xff]{1,15})#(\d{3,7})")
+_CACHE_PATH_RE = re.compile(
+    rb"([\x20-\x7e]*?Cache[\\/]([0-9a-f]{2})[\\/]([0-9a-f]{2})[\\/]([0-9a-f]{64})\.s2ma)"
+)
+_MAP_STRING_ID_RE = re.compile(r'mAPMapStringID\s*=\s*"([^"]+)"', re.IGNORECASE)
+_DOC_NAME_RE = re.compile(r"^DocInfo/Name=(.+)$", re.MULTILINE)
+_IGNORED_TAG_NAMES = {"blizzmaps"}
+
+
+@dataclass
+class LobbyInfo:
+    battletags: list[str] = field(default_factory=list)
+    map_hash: str | None = None
+    map_cache_path: str | None = None
+    map_id: str | None = None
+    map_source: str | None = None  # "appris" | "cache Battle.net"
 
 
 def extract_battletags(data: bytes) -> list[str]:
     seen: list[str] = []
     for name, digits in _BATTLETAG_RE.findall(data):
-        tag = f"{name.decode('utf-8', errors='ignore')}#{digits.decode()}"
+        decoded = name.decode("utf-8", errors="ignore")
+        if decoded.lower() in _IGNORED_TAG_NAMES:
+            continue
+        tag = f"{decoded}#{digits.decode()}"
         if tag not in seen:
             seen.append(tag)
     return seen[:10]
 
 
+def parse_lobby(data: bytes) -> LobbyInfo:
+    info = LobbyInfo(battletags=extract_battletags(data))
+    paths = _CACHE_PATH_RE.findall(data)
+    if paths:  # la dernière dépendance est la carte elle-même
+        full, _a, _b, digest = paths[-1]
+        info.map_hash = digest.decode()
+        info.map_cache_path = full.decode("ascii", errors="ignore").strip()
+    return info
+
+
+# ---- apprentissage empreinte -> carte -------------------------------------------------
+
+_learned_lock = threading.Lock()
+
+
+def _learned_path() -> Path:
+    return data_dir() / "map_hashes.json"
+
+
+def learned_maps() -> dict[str, str]:
+    try:
+        return json.loads(_learned_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def learn_map(map_hash: str, map_id: str) -> None:
+    if map_id not in registry().maps:
+        return
+    with _learned_lock:
+        known = learned_maps()
+        if known.get(map_hash) != map_id:
+            known[map_hash] = map_id
+            _learned_path().write_text(json.dumps(known, indent=1), encoding="utf-8")
+
+
+# ---- lecture du fichier de carte dans le cache Battle.net ------------------------------
+
+def _cache_candidates(info: LobbyInfo) -> list[Path]:
+    out: list[Path] = []
+    if info.map_cache_path:
+        out.append(Path(info.map_cache_path))
+    if info.map_hash:
+        h = info.map_hash
+        roots = [os.environ.get("PROGRAMDATA", r"C:\ProgramData") + r"\Blizzard Entertainment\Battle.net\Cache",
+                 "/Users/Shared/Blizzard/Battle.net/Cache"]
+        out += [Path(root) / h[:2] / h[2:4] / f"{h}.s2ma" for root in roots]
+    return out
+
+
+def _read_map_name_from_s2ma(path: Path) -> str | None:
+    import mpyq
+
+    archive = mpyq.MPQArchive(str(path), listfile=False)
+    script = archive.read_file("MapScript.galaxy")
+    if script:
+        m = _MAP_STRING_ID_RE.search(script.decode("utf-8", errors="ignore"))
+        if m:
+            return m.group(1)
+    for locale in ("enUS", "frFR"):
+        strings = archive.read_file(f"{locale}.StormData\\LocalizedData\\GameStrings.txt")
+        if strings:
+            m = _DOC_NAME_RE.search(strings.decode("utf-8", errors="ignore"))
+            if m:
+                return m.group(1).strip()
+    return None
+
+
+def resolve_lobby_map(info: LobbyInfo) -> LobbyInfo:
+    if not info.map_hash:
+        return info
+    known = learned_maps().get(info.map_hash)
+    if known:
+        info.map_id, info.map_source = known, "appris"
+        return info
+    for candidate in _cache_candidates(info):
+        try:
+            if not candidate.is_file():
+                continue
+            name = _read_map_name_from_s2ma(candidate)
+        except Exception:  # format de cache inattendu : on retombe sur l'apprentissage
+            log.debug("Lecture impossible de %s", candidate, exc_info=True)
+            continue
+        guessed = registry().guess_map(name) if name else None
+        if guessed:
+            info.map_id, info.map_source = guessed.id, "cache Battle.net"
+            learn_map(info.map_hash, guessed.id)
+            return info
+    return info
+
+
+def read_lobby_file(path: Path) -> LobbyInfo:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return LobbyInfo()
+    return resolve_lobby_map(parse_lobby(data))
+
+
+# ---- surveillance ----------------------------------------------------------------------
+
 class _Handler(FileSystemEventHandler):
-    def __init__(self, on_lobby: Callable[[list[str]], None]) -> None:
+    def __init__(self, on_lobby: Callable[[LobbyInfo], None]) -> None:
         self.on_lobby = on_lobby
+        self._last: tuple[str, float] | None = None
 
     def _maybe(self, path: str) -> None:
-        if Path(path).name != BATTLELOBBY_NAME:
+        p = Path(path)
+        if p.name != BATTLELOBBY_NAME:
             return
         try:
-            data = Path(path).read_bytes()
+            stamp = (str(p), p.stat().st_mtime)
         except OSError:
-            data = b""
-        self.on_lobby(extract_battletags(data))
+            return
+        if stamp == self._last:
+            return
+        self._last = stamp
+        info = read_lobby_file(p)
+        if info.battletags or info.map_hash:
+            self.on_lobby(info)
 
     def on_created(self, event: FileSystemEvent) -> None:
         self._maybe(str(event.src_path))
@@ -51,7 +188,7 @@ class _Handler(FileSystemEventHandler):
 
 
 class LobbyWatcher:
-    def __init__(self, temp_dir: Path, on_lobby: Callable[[list[str]], None]) -> None:
+    def __init__(self, temp_dir: Path, on_lobby: Callable[[LobbyInfo], None]) -> None:
         self.temp_dir = temp_dir
         self.on_lobby = on_lobby
         self._observer: Observer | None = None

@@ -10,8 +10,8 @@ from app.reference import normalize, registry
 from app.replay.parser import RawReplay
 
 GAMELOOPS_PER_SECOND = 16
-# Boucle à laquelle l'horloge de jeu affiche 0:00 (valeur communément admise
-# par les parseurs communautaires ; ajustable si Blizzard la modifie).
+# Boucle à laquelle l'horloge de jeu affiche 0:00 = ouverture des portes (évènement
+# « GatesOpen », 610 en partie classique, 1206 en ARAM). Valeur par défaut si absent.
 GAME_START_LOOP = 610
 TALENT_TIERS = (1, 4, 7, 10, 13, 16, 20)
 
@@ -43,14 +43,19 @@ SCORE_FIELDS = {
     "TimeSpentDead": "time_spent_dead_s",
 }
 
-# Évènements de stat reconnus comme « objectifs de carte » (liste extensible).
-OBJECTIVE_EVENTS = {
-    "AltarCaptured", "TownStructureDeath", "DragonKnightActivated", "ImmortalDefeated",
-    "TributeCollected", "CurseActivated", "GardenTerrorActivated", "SkyTempleCaptured",
-    "SkyTempleShotsFired", "SpiderQueenSpawned", "SoulEatersSpawned", "Infernal Shrine Captured",
-    "Punisher Killed", "BraxisHoldoutMapEventComplete", "GhostShipCaptured", "NukeLaunched",
-    "PayloadReachedDestination", "TriglavProtectorSpawned", "GatesOpen",
+# Évènements de stat sans rapport avec l'objectif de carte (le reste est conservé
+# tel quel comme évènement « objective » : noms réels vérifiés sur replays, ex.
+# DragonKnightActivated, Boss Duel Started, VolskayaCapturePointSpawned…).
+GENERIC_STAT_EVENTS = {
+    "PlayerDeath", "LevelUp", "TalentChosen", "PlayerInit", "PlayerSpawned", "RegenGlobePickedUp",
+    "JungleCampCapture", "JungleCampInit", "TownStructureInit", "GameStart", "Game Results",
+    "Pickup Spawned", "Pickup Used", "Upvote",
 }
+GENERIC_PREFIXES = ("EndOfGame", "Periodic", "Loot")
+
+
+def _is_objective_event(name: str) -> bool:
+    return bool(name) and name not in GENERIC_STAT_EVENTS and not name.startswith(GENERIC_PREFIXES)
 
 
 @dataclass
@@ -101,8 +106,27 @@ def _s(value: Any) -> str:
     return "" if value is None else str(value)
 
 
-def loop_to_seconds(gameloop: int) -> float:
-    return max(0.0, (gameloop - GAME_START_LOOP) / GAMELOOPS_PER_SECOND)
+def loop_to_seconds(gameloop: int, start_loop: int = GAME_START_LOOP) -> float:
+    return max(0.0, (gameloop - start_loop) / GAMELOOPS_PER_SECOND)
+
+
+def _gates_open_loop(tracker_events: list[dict[str, Any]]) -> int:
+    for ev in tracker_events:
+        if ev.get("_event", "").endswith("SStatGameEvent") and _s(ev.get("m_eventName")) == "GatesOpen":
+            return int(ev.get("_gameloop", GAME_START_LOOP))
+    return GAME_START_LOOP
+
+
+def _team_from(ints: dict[str, list[Any]], fixed: dict[str, list[Any]]) -> int | None:
+    """Équipe 0/1 à partir des différentes clés utilisées par les évènements de carte."""
+    for key in ("TeamID", "Team", "WinningTeam", "Winning Team"):
+        if ints.get(key):
+            value = int(ints[key][0])
+            return value - 1 if value in (1, 2) else None
+    if fixed.get("TeamID"):
+        value = int(fixed["TeamID"][0] / 4096)
+        return value - 1 if value in (1, 2) else None
+    return None
 
 
 def _filetime_to_datetime(filetime: int | None) -> datetime | None:
@@ -149,7 +173,8 @@ def extract_match(raw: RawReplay) -> ParsedMatch:
         version.get("m_major", 0), version.get("m_minor", 0),
         version.get("m_revision", 0), version.get("m_build", 0),
     )
-    duration_s = int(loop_to_seconds(int(header.get("m_elapsedGameLoops", 0))))
+    start_loop = _gates_open_loop(raw.tracker_events)
+    duration_s = int(loop_to_seconds(int(header.get("m_elapsedGameLoops", 0)), start_loop))
 
     map_raw = _s(details.get("m_title"))
     map_info = reg.resolve_map(map_raw)
@@ -189,7 +214,7 @@ def extract_match(raw: RawReplay) -> ParsedMatch:
 
     for ev in raw.tracker_events:
         name = ev.get("_event", "")
-        t = loop_to_seconds(int(ev.get("_gameloop", 0)))
+        t = loop_to_seconds(int(ev.get("_gameloop", 0)), start_loop)
 
         if name == "NNet.Replay.Tracker.SScoreResultEvent":
             for inst in ev.get("m_instanceList", []):
@@ -219,10 +244,8 @@ def extract_match(raw: RawReplay) -> ParsedMatch:
                 team_levels[p.team] = level
                 events.append(ParsedEvent(t, "level", p.team, None, {"level": level}))
         elif stat == "JungleCampCapture":
-            team_id = (fixed.get("TeamID") or [None])[0]
-            team = int(team_id / 4096) - 1 if team_id is not None else None
             camp = _s((strings.get("CampType") or ["?"])[0])
-            events.append(ParsedEvent(t, "camp", team, None, {"camp": camp}))
+            events.append(ParsedEvent(t, "camp", _team_from(ints, fixed), None, {"camp": camp}))
         elif stat == "EndOfGameTalentChoices":
             p = player_for((ints.get("PlayerID") or [None])[0])
             if not p:
@@ -236,11 +259,14 @@ def extract_match(raw: RawReplay) -> ParsedMatch:
                 choice = strings.get(f"Tier {tier} Choice")
                 if choice:
                     p.talents.append({"tier": tier, "level": level, "name": _s(choice[0])})
-        elif stat in OBJECTIVE_EVENTS:
-            team_id = (ints.get("Team") or ints.get("TeamID") or [None])[0]
-            events.append(
-                ParsedEvent(t, "objective", int(team_id) - 1 if team_id else None, None, {"name": stat})
-            )
+        elif stat == "TownStructureDeath":
+            events.append(ParsedEvent(t, "structure", _team_from(ints, fixed), None, {}))
+        elif stat == "GatesOpen":
+            events.append(ParsedEvent(t, "gates", None, None, {}))
+        elif _is_objective_event(stat):
+            payload: dict[str, Any] = {"name": stat}
+            payload.update({k: v[0] for k, v in ints.items() if v and isinstance(v[0], int)})
+            events.append(ParsedEvent(t, "objective", _team_from(ints, fixed), None, payload))
 
     for p in players:
         for src, dst in SCORE_FIELDS.items():

@@ -10,6 +10,19 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).parent / "data"
 
+# Mots-clés -> carte (ordre important : « hanamura » avant « temple »).
+MAP_KEYWORDS: tuple[tuple[str, str], ...] = (
+    ("hanamura", "hanamura_temple"), ("towersofdoom", "towers_of_doom"), ("toursdudestin", "towers_of_doom"),
+    ("shrine", "infernal_shrines"), ("sanctuaire", "infernal_shrines"), ("spider", "tomb_of_the_spider_queen"),
+    ("araignee", "tomb_of_the_spider_queen"), ("volskaya", "volskaya_foundry"), ("warhead", "warhead_junction"),
+    ("ogive", "warhead_junction"), ("braxis", "braxis_holdout"), ("dragon", "dragon_shire"),
+    ("cursed", "cursed_hollow"), ("maudit", "cursed_hollow"), ("blackheart", "blackhearts_bay"),
+    ("coeurnoir", "blackhearts_bay"), ("eternity", "battlefield_of_eternity"), ("eternite", "battlefield_of_eternity"),
+    ("alterac", "alterac_pass"), ("garden", "garden_of_terror"), ("hauntedwoods", "garden_of_terror"),
+    ("jardin", "garden_of_terror"), ("skytemple", "sky_temple"), ("luxoria", "sky_temple"),
+    ("templeceleste", "sky_temple"),
+)
+
 ROLES = ("Tank", "Bruiser", "Ranged Assassin", "Melee Assassin", "Healer", "Support")
 
 
@@ -74,6 +87,17 @@ class _Registry:
     def resolve_map(self, raw: str) -> MapInfo | None:
         map_id = self._map_alias.get(normalize(raw))
         return self.maps.get(map_id) if map_id else None
+
+    def guess_map(self, raw: str) -> MapInfo | None:
+        """Résolution tolérante (identifiants internes type « TowersOfDoom », titres partiels)."""
+        exact = self.resolve_map(raw)
+        if exact:
+            return exact
+        text = normalize(raw)
+        for keyword, map_id in MAP_KEYWORDS:
+            if keyword in text:
+                return self.maps.get(map_id)
+        return None
 
 
 @lru_cache

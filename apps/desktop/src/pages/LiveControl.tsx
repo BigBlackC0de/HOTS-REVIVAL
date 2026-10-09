@@ -22,16 +22,16 @@ export function LiveControl() {
       <div>
         <h1 className="title-display mb-4 text-3xl">Overlay</h1>
         <div className="rounded-xl bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2240%22 height=%2240%22><rect width=%2240%22 height=%2240%22 fill=%22%23151935%22/><path d=%22M0 40L40 0%22 stroke=%22%231e2347%22/></svg>')] p-3">
-          <OverlayPanel state={state} interactive heroes={heroes.data ?? []} maps={maps.data ?? []} onState={setState} />
+          <OverlayPanel state={state} interactive preview heroes={heroes.data ?? []} maps={maps.data ?? []} onState={setState} />
         </div>
       </div>
       <div className="space-y-4 pt-14">
         <Card title="Fonctionnement">
           <List items={[
-            "Le lancement d'une partie est détecté automatiquement (fichier de chargement écrit par le jeu).",
-            "Synchronisez l'horloge sur 0:00 puis indiquez la carte et votre héros : timers d'objectifs et de camps s'affichent.",
-            "Mettez à jour les niveaux d'équipe visibles en haut de l'écran pour les alertes de powerspike.",
-            "Le build recommandé provient des replays importés (taux de victoire et popularité).",
+            "Automatique : lancement et fermeture du jeu, chargement d'une partie, carte, fin de partie (l'overlay se vide tout seul).",
+            "Les timers d'objectifs sont mesurés sur vos propres replays (ou sur des replays de référence).",
+            "Horloge et niveaux d'équipe : lecture de l'écran (à activer dans Paramètres) ou raccourcis clavier.",
+            "Le build affiché vient d'Icy Veins pour votre héros, à défaut de vos replays.",
             "Lancez le jeu en mode « Plein écran fenêtré » pour que l'overlay soit visible.",
           ]} />
         </Card>

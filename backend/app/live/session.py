@@ -1,6 +1,11 @@
 """État de la partie en cours, construit UNIQUEMENT à partir de sources autorisées
-(voir compliance.ALLOWED_SOURCES) : horloge synchronisée par le joueur, carte
-choisie, niveaux d'équipe visibles à l'écran, camps observés."""
+(voir compliance.ALLOWED_SOURCES) : processus du jeu présent ou non, fichier de chargement
+(carte, joueurs), lecture de l'écran opt-in ou saisies du joueur (horloge, niveaux), camps
+observés, timers mesurés sur replays.
+
+Cycle : idle → loading (fichier de chargement) → in_game (horloge connue) → ended
+(replay enregistré) → idle. Chaque nouvelle partie repart d'un état vierge.
+"""
 from __future__ import annotations
 
 import threading
@@ -12,6 +17,10 @@ from app.reference import registry
 
 TALENT_LEVELS = (1, 4, 7, 10, 13, 16, 20)
 OBJECTIVE_WARNING_S = 45
+FLASH_DURATION_S = 8
+MAX_ALERTS = 3
+ENDED_LINGER_S = 15
+LEVEL_SOURCES = ("manuel", "écran")
 
 
 def talent_tier(level: int) -> int:
@@ -27,55 +36,106 @@ class CampTimer:
 
 @dataclass
 class LiveSession:
-    status: str = "idle"  # idle | loading | in_game
+    status: str = "idle"
+    game_id: int = 0
+    game_running: bool = False  # processus HeroesOfTheStorm détecté
     map_id: str | None = None
+    map_source: str | None = None
     my_hero_id: str | None = None
     lobby_players: list[str] = field(default_factory=list)
+    lobby_map_hash: str | None = None
     clock_anchor: float | None = None  # time.monotonic() correspondant à 0:00
+    clock_source: str | None = None
+    timings: dict = field(default_factory=dict)
     next_objective_at: float | None = None
     ally_level: int = 1
     enemy_level: int = 1
+    level_source: str = "manuel"
     camps: list[CampTimer] = field(default_factory=list)
     talent_build: list[dict] = field(default_factory=list)
-    _announced: set[str] = field(default_factory=set)
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    ended_at: float | None = None
+    _flashes: dict[str, tuple[str, str, float]] = field(default_factory=dict)
+    _flashed: set[str] = field(default_factory=set)
+    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
-    # ---- transitions (déclenchées par le joueur ou le fichier battlelobby)
-    def on_lobby(self, players: list[str]) -> None:
-        with self._lock:
-            self.reset_locked()
-            self.status, self.lobby_players = "loading", players
+    # ---- cycle de vie ------------------------------------------------------------------
+    def _new_game_locked(self) -> None:
+        running = self.game_running
+        game_id = self.game_id + 1
+        fresh = LiveSession()
+        for name in fresh.__dataclass_fields__:
+            if name != "_lock":
+                setattr(self, name, getattr(fresh, name))
+        self.game_running, self.game_id = running, game_id
 
-    def start(self, map_id: str | None, my_hero_id: str | None, clock_s: float = 0.0) -> None:
+    def on_lobby(self, battletags: list[str], map_id: str | None, map_source: str | None,
+                 map_hash: str | None, timings: dict | None = None) -> None:
+        """Nouveau fichier de chargement = nouvelle partie : on repart de zéro."""
         with self._lock:
-            if self.status == "idle":
-                self.reset_locked()
-            self.status = "in_game"
-            self.map_id = map_id or self.map_id
+            self._new_game_locked()
+            self.status = "loading"
+            self.lobby_players, self.lobby_map_hash = battletags, map_hash
+            self.map_id, self.map_source = map_id, map_source
+            self.timings = timings or {}
+
+    def start(self, map_id: str | None, my_hero_id: str | None, clock_s: float = 0.0,
+              timings: dict | None = None) -> None:
+        with self._lock:
+            if self.status in ("idle", "ended"):
+                self._new_game_locked()
+            if map_id and map_id != self.map_id:
+                self.map_id, self.map_source = map_id, "manuel"
+                self.timings = timings or {}
+            elif timings and not self.timings:
+                self.timings = timings
             self.my_hero_id = my_hero_id or self.my_hero_id
-            self.clock_anchor = time.monotonic() - clock_s
-            info = registry().maps.get(self.map_id or "")
-            self.next_objective_at = float(info.first_objective_s) if info and info.first_objective_s else None
+            self._set_clock_locked(clock_s, "manuel")
 
-    def sync_clock(self, clock_s: float) -> None:
+    def _set_clock_locked(self, clock_s: float, source: str) -> None:
+        first_sync = self.clock_anchor is None
+        self.clock_anchor = time.monotonic() - clock_s
+        self.clock_source = source
+        self.status = "in_game"
+        if first_sync or self.next_objective_at is None:
+            first = self.timings.get("first_objective_s")
+            if first:
+                self.next_objective_at = float(first)
+                interval = self.timings.get("objective_interval_s") or 0
+                while interval and self.next_objective_at < clock_s - 60:
+                    self.next_objective_at += interval
+
+    def sync_clock(self, clock_s: float, source: str = "manuel") -> None:
         with self._lock:
-            self.clock_anchor = time.monotonic() - clock_s
-            if self.status != "in_game":
-                self.status = "in_game"
+            if self.status in ("idle", "ended"):
+                self._new_game_locked()
+            # une lecture d'écran ne corrige l'horloge que si l'écart est notable
+            current = self.clock()
+            if source == "écran" and current is not None and abs(current - clock_s) < 2:
+                return
+            self._set_clock_locked(clock_s, source)
 
-    def set_levels(self, ally: int | None, enemy: int | None) -> None:
+    def set_levels(self, ally: int | None, enemy: int | None, source: str = "manuel") -> None:
         with self._lock:
             if ally is not None:
-                self.ally_level = max(1, min(30, ally))
+                ally = max(1, min(30, ally))
+                for lvl in (10, 16, 20):
+                    if self.ally_level < lvl <= ally:
+                        self._flash_locked(f"ally-{lvl}", f"Niveau {lvl} atteint.", "success")
+                self.ally_level = ally
             if enemy is not None:
-                self.enemy_level = max(1, min(30, enemy))
+                enemy = max(1, min(30, enemy))
+                for lvl in (10, 16, 20):
+                    if self.enemy_level < lvl <= enemy:
+                        self._flash_locked(f"enemy-{lvl}", f"L'équipe adverse atteint le niveau {lvl}.", "danger")
+                self.enemy_level = enemy
+            self.level_source = source if source in LEVEL_SOURCES else "manuel"
 
     def objective_done(self) -> None:
         with self._lock:
-            info = registry().maps.get(self.map_id or "")
             now = self.clock()
-            if info and info.objective_interval_s and now is not None:
-                self.next_objective_at = now + info.objective_interval_s
+            interval = self.timings.get("objective_interval_s")
+            if interval and now is not None:
+                self.next_objective_at = now + interval
 
     def camp_taken(self, camp_type: str, side: str) -> None:
         with self._lock:
@@ -84,91 +144,128 @@ class LiveSession:
             self.camps = [c for c in self.camps if not (c.camp_type == camp_type and c.side == side)]
             self.camps.append(CampTimer(camp_type, side, now + respawn))
 
+    def on_game_end(self) -> None:
+        """Replay enregistré : la partie est finie, l'overlay se vide."""
+        with self._lock:
+            if self.status != "idle":
+                self.status, self.ended_at = "ended", time.monotonic()
+
+    def on_process(self, running: bool) -> None:
+        with self._lock:
+            was = self.game_running
+            self.game_running = running
+            if was and not running:  # jeu fermé : plus rien à afficher
+                self._new_game_locked()
+
     def stop(self) -> None:
         with self._lock:
-            self.reset_locked()
+            self._new_game_locked()
 
-    def reset_locked(self) -> None:
-        self.status, self.map_id, self.my_hero_id = "idle", None, None
-        self.lobby_players, self.clock_anchor, self.next_objective_at = [], None, None
-        self.ally_level = self.enemy_level = 1
-        self.camps, self.talent_build, self._announced = [], [], set()
-
-    # ---- lecture
+    # ---- lecture -----------------------------------------------------------------------
     def clock(self) -> float | None:
         return None if self.clock_anchor is None else max(0.0, time.monotonic() - self.clock_anchor)
 
+    def _flash_locked(self, key: str, text: str, level: str) -> None:
+        if key not in self._flashed:
+            self._flashed.add(key)
+            self._flashes[key] = (text, level, time.monotonic() + FLASH_DURATION_S)
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
+            if self.status == "ended" and self.ended_at and time.monotonic() - self.ended_at > ENDED_LINGER_S:
+                self._new_game_locked()
             return compute_overlay(self)
 
 
 def compute_overlay(s: LiveSession) -> dict[str, Any]:
-    clock = s.clock()
+    clock = s.clock() if s.status == "in_game" else None
     info = registry().maps.get(s.map_id or "")
-    alerts: list[dict[str, str]] = []
+    alerts: list[dict[str, Any]] = []
     tips: list[str] = []
-
-    def alert(key: str, text: str, level: str = "info") -> None:
-        alerts.append({"id": key, "text": text, "level": level, "new": key not in s._announced})
-        s._announced.add(key)
 
     # Objectif
     objective = None
-    if info and clock is not None:
-        remaining = None if s.next_objective_at is None else s.next_objective_at - clock
-        if remaining is not None and remaining < -60 and info.objective_interval_s:
-            # pas de confirmation du joueur : on projette l'objectif suivant (estimation)
-            s.next_objective_at += info.objective_interval_s
-            remaining += info.objective_interval_s
-        priority = "Farm / soak XP / camps"
+    if info:
+        remaining = None
+        if clock is not None and s.next_objective_at is not None:
+            remaining = s.next_objective_at - clock
+            interval = s.timings.get("objective_interval_s")
+            if remaining < -90 and interval:  # pas de « objectif terminé » : on projette le suivant
+                s.next_objective_at += interval
+                remaining += interval
+        priority = "Farm, soak d'XP et camps"
         if remaining is not None and remaining <= OBJECTIVE_WARNING_S:
             priority = "Regroupement pour l'objectif"
             if remaining > 0:
-                alert(f"obj-{int(s.next_objective_at or 0)}",
-                      f"Le prochain objectif arrive dans {int(remaining)} secondes.", "warning")
+                alerts.append({"id": "objective", "priority": 2, "level": "warning",
+                               "text": f"Objectif dans {int(remaining)} s : regroupez-vous."})
         objective = {
             "name": info.objective, "map": info.name, "next_in_s": remaining,
-            "estimated": not info.verified, "priority": priority, "tips": list(info.tips),
+            "source": s.timings.get("source", "estimation"), "samples": s.timings.get("samples", 0),
+            "priority": priority, "tips": list(info.tips),
         }
 
     # Camps
     camps = []
     for c in sorted(s.camps, key=lambda c: c.respawn_at):
         left = None if clock is None else c.respawn_at - clock
+        if left is not None and left < -60:
+            continue  # camp disponible depuis longtemps : on ne l'affiche plus
         camps.append({"camp": c.camp_type, "side": c.side, "respawn_in_s": left})
         if left is not None and 0 < left <= 20 and c.side == "ally":
-            alert(f"camp-{c.camp_type}-{int(c.respawn_at)}", f"Camp {c.camp_type} disponible dans {int(left)} s.")
+            alerts.append({"id": f"camp-{c.camp_type}", "priority": 3, "level": "info",
+                           "text": f"Camp {c.camp_type} disponible dans {int(left)} s."})
 
-    # Powerspikes (niveaux affichés publiquement en haut de l'écran)
+    # Powerspikes (niveaux d'équipe visibles en haut de l'écran)
     ally_tier, enemy_tier = talent_tier(s.ally_level), talent_tier(s.enemy_level)
-    for lvl in (10, 16, 20):
-        if s.ally_level >= lvl:
-            alert(f"ally-{lvl}", f"Niveau {lvl} atteint.", "success")
-    if enemy_tier > ally_tier:
-        alert(f"enemy-adv-{enemy_tier}", "L'équipe adverse possède un avantage de talent.", "danger")
-        tips.append("Ne forcez pas un combat en infériorité de talent.")
-    elif ally_tier > enemy_tier:
-        lvl = TALENT_LEVELS[ally_tier - 1]
-        tips.append(f"Votre équipe possède un avantage niveau {lvl} : forcez l'objectif ou un combat.")
-    if objective and objective["next_in_s"] is not None and 0 < objective["next_in_s"] <= OBJECTIVE_WARNING_S:
-        tips.append("Restez groupés.")
-    if s.ally_level in (9, 15, 19):
-        tips.append(f"Niveau {s.ally_level + 1} imminent : attendez le talent avant d'engager.")
+    if s.status == "in_game":
+        if enemy_tier > ally_tier:
+            alerts.append({"id": "talent-disadvantage", "priority": 1, "level": "danger",
+                           "text": "Désavantage de talent : évitez les combats."})
+            tips.append("Ne forcez pas un combat en infériorité de talent.")
+        elif ally_tier > enemy_tier:
+            lvl = TALENT_LEVELS[ally_tier - 1]
+            tips.append(f"Avantage niveau {lvl} : forcez l'objectif ou un combat.")
+        if s.ally_level in (9, 15, 19):
+            tips.append(f"Niveau {s.ally_level + 1} imminent : attendez le talent avant d'engager.")
+        if objective and objective["next_in_s"] is not None and 0 < objective["next_in_s"] <= OBJECTIVE_WARNING_S:
+            tips.append("Restez groupés.")
+
+    now = time.monotonic()
+    for key, (text, level, until) in list(s._flashes.items()):
+        if until < now:
+            del s._flashes[key]
+        else:
+            alerts.append({"id": key, "priority": 0, "level": level, "text": text})
+    alerts.sort(key=lambda a: a["priority"])
+
+    # Talent à venir (le plus utile en jeu) + build complet
+    next_talent = None
+    for t in s.talent_build:
+        if t["level"] > s.ally_level:
+            next_talent = t
+            break
 
     return {
         "status": s.status,
+        "game_id": s.game_id,
+        "game_running": s.game_running,
         "clock_s": clock,
+        "clock_source": s.clock_source,
         "map_id": s.map_id,
+        "map_name": info.name if info else None,
+        "map_source": s.map_source,
         "my_hero_id": s.my_hero_id,
         "lobby_players": s.lobby_players,
-        "levels": {"ally": s.ally_level, "enemy": s.enemy_level, "ally_tier": ally_tier, "enemy_tier": enemy_tier},
+        "levels": {"ally": s.ally_level, "enemy": s.enemy_level, "ally_tier": ally_tier,
+                   "enemy_tier": enemy_tier, "source": s.level_source},
         "objective": objective,
         "camps": camps,
         "talents": s.talent_build,
-        "alerts": alerts,
-        "tips": tips,
-        "sources": ["user_input", "battlelobby_file", "static_data", "own_history"],
+        "next_talent": next_talent,
+        "alerts": alerts[:MAX_ALERTS],
+        "tips": tips[:2],
+        "sources": ["game_process", "battlelobby_file", "user_input", "static_data", "own_history"],
     }
 
 

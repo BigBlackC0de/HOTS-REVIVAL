@@ -126,6 +126,11 @@ class LiveStartRequest(BaseModel):
 
 class LiveSyncRequest(BaseModel):
     clock_s: float = Field(ge=0, le=3600)
+    source: Literal["manuel", "écran"] = "manuel"
+
+
+class LiveHeroRequest(BaseModel):
+    hero_id: str = Field(min_length=1, max_length=48)
 
 
 class LiveLevelsRequest(BaseModel):
@@ -133,6 +138,7 @@ class LiveLevelsRequest(BaseModel):
     enemy: int | None = Field(None, ge=1, le=30)
     ally_delta: int | None = Field(None, ge=-1, le=1)
     enemy_delta: int | None = Field(None, ge=-1, le=1)
+    source: Literal["manuel", "écran"] = "manuel"
 
 
 class LiveCampRequest(BaseModel):

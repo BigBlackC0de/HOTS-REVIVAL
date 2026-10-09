@@ -7,9 +7,11 @@ Ce module est la référence lue par l'UI (/api/compliance) et par les tests.
 from __future__ import annotations
 
 ALLOWED_SOURCES: dict[str, str] = {
+    "game_process": "Présence du processus HeroesOfTheStorm dans la liste des programmes (jeu lancé / fermé), "
+                    "comme le fait Discord. Le processus n'est jamais ouvert ni lu.",
     "replay_files": "Fichiers .StormReplay terminés, écrits par le jeu dans Documents (analyse post-partie).",
     "battlelobby_file": "Fichier replay.server.battlelobby écrit par le jeu au chargement : uniquement les "
-                        "informations affichées sur l'écran de chargement (joueurs). Sert de signal « partie lancée ».",
+                        "informations affichées sur l'écran de chargement (joueurs, carte).",
     "user_input": "Saisies volontaires du joueur dans l'overlay (carte, synchronisation d'horloge, niveaux "
                   "d'équipe affichés en haut de l'écran, camps observés).",
     "static_data": "Données publiques : timings de carte, profils de héros, patch notes.",

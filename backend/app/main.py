@@ -10,12 +10,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
+from app.analytics.timings import map_timings
 from app.api import coach, draft, live, matches, profile, reference, replays, settings as settings_api
 from app.config import Settings, get_settings
-from app.db import create_schema, init_engine
+from app.db import SessionLocal, create_schema, init_engine
 from app.events import hub
-from app.live.battlelobby import LobbyWatcher
+from app.live.battlelobby import LobbyInfo, LobbyWatcher, learn_map
+from app.live.game_process import GameProcessMonitor
 from app.live.session import live_session
+from app.models import Match
 from app.observability import init_observability, track
 from app.replay.importer import ImportResult
 from app.replay.watcher import ReplayImporter, ReplayWatcher
@@ -25,15 +28,31 @@ log = logging.getLogger("hots_revival")
 
 
 def _on_import(path: Path, result: ImportResult) -> None:
-    if result.status == "imported":
-        track("replay_imported")
-        hub.publish_threadsafe({"type": "match_imported", "match_id": result.match_id, "file": path.name})
-        live_session.stop()  # la partie est terminée : l'overlay repasse au repos
+    if result.status != "imported":
+        return
+    track("replay_imported")
+    # Apprentissage : l'empreinte de carte du fichier de chargement correspond à cette carte.
+    if live_session.lobby_map_hash and result.match_id:
+        with SessionLocal() as db:
+            match = db.get(Match, result.match_id)
+            if match:
+                learn_map(live_session.lobby_map_hash, match.map_id)
+    live_session.on_game_end()
+    hub.publish_threadsafe({"type": "match_imported", "match_id": result.match_id, "file": path.name})
 
 
-def _on_lobby(players: list[str]) -> None:
-    live_session.on_lobby(players)
-    hub.publish_threadsafe({"type": "game_loading", "players": players})
+def _on_lobby(info: LobbyInfo) -> None:
+    timings = {}
+    if info.map_id:
+        with SessionLocal() as db:
+            timings = map_timings(db, info.map_id)
+    live_session.on_lobby(info.battletags, info.map_id, info.map_source, info.map_hash, timings)
+    hub.publish_threadsafe({"type": "game_loading", "players": info.battletags, "map_id": info.map_id})
+
+
+def _on_process(running: bool) -> None:
+    live_session.on_process(running)
+    hub.publish_threadsafe({"type": "game_process", "running": running})
 
 
 def start_replay_watching(app: FastAPI, start_watcher: bool = True) -> None:
@@ -65,8 +84,11 @@ def create_app(settings: Settings | None = None, start_watchers: bool = True) ->
         create_schema()
         hub.bind_loop(asyncio.get_running_loop())
         app.state.start_watchers = start_watchers
-        app.state.lobby_watcher = None
+        app.state.lobby_watcher = app.state.process_monitor = None
         start_replay_watching(app, start_watchers)
+        if start_watchers:
+            app.state.process_monitor = GameProcessMonitor(_on_process)
+            app.state.process_monitor.start()
         if start_watchers and settings.watch_live:
             try:
                 app.state.lobby_watcher = LobbyWatcher(settings.resolved_live_dir(), _on_lobby)
@@ -77,6 +99,8 @@ def create_app(settings: Settings | None = None, start_watchers: bool = True) ->
         stop_replay_watching(app)
         if app.state.lobby_watcher:
             app.state.lobby_watcher.stop()
+        if app.state.process_monitor:
+            app.state.process_monitor.stop()
 
     app = FastAPI(title="HOTS REVIVAL API", version=__version__, lifespan=lifespan)
     app.state.settings = settings
