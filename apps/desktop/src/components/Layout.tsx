@@ -4,7 +4,7 @@ import { LiveContext } from "../hooks/liveContext";
 import { useLive } from "../hooks/useLive";
 import { useVoiceGuide } from "../hooks/useVoiceGuide";
 import { bridge } from "../lib/bridge";
-import { UpdateButton } from "./UpdateButton";
+import { UpdateBanner, UpdateButton } from "./UpdateButton";
 
 const NAV = [
   { to: "/game", label: "Partie en cours", icon: "▶" },
@@ -74,6 +74,7 @@ export function Layout() {
         </div>
       </aside>
       <main className="flex-1 overflow-y-auto p-6">
+        <UpdateBanner />
         <Outlet />
       </main>
       {toast && (

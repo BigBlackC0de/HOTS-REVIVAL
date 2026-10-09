@@ -32,8 +32,8 @@ export function initUpdater(win: BrowserWindow): void {
   autoUpdater.on("download-progress", (p) => emit({ state: "downloading", percent: Math.round(p.percent) }));
   autoUpdater.on("update-downloaded", (info) => emit({ state: "ready", version: info.version }));
   autoUpdater.on("error", (err) => emit({ state: "error", message: String(err?.message ?? err) }));
-  setTimeout(() => void checkForUpdates(), 10_000);
-  setInterval(() => void checkForUpdates(), 4 * 60 * 60 * 1000);
+  setTimeout(() => void checkForUpdates(), 5_000);
+  setInterval(() => void checkForUpdates(), 30 * 60 * 1000);
 }
 
 export async function checkForUpdates(): Promise<UpdateStatus> {
