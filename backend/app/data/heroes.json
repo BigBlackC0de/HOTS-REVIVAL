@@ -98,6 +98,7 @@
     {"id": "abathur", "name": "Abathur", "role": "Support", "tags": ["global", "shields", "split", "waveclear"], "curve": [2, 2, 3]},
     {"id": "medivh", "name": "Medivh", "role": "Support", "tags": ["shields", "global", "mobility", "poke"], "curve": [2, 3, 2]},
     {"id": "lostvikings", "name": "The Lost Vikings", "role": "Support", "aliases": ["LostVikings"], "tags": ["split", "waveclear", "global"], "curve": [3, 2, 1]},
-    {"id": "zarya", "name": "Zarya", "role": "Support", "tags": ["shields", "frontline", "peel", "cc"], "curve": [2, 3, 2]}
+    {"id": "zarya", "name": "Zarya", "role": "Support", "tags": ["shields", "frontline", "peel", "cc"], "curve": [2, 3, 2]},
+    {"id": "xalatath", "name": "Xal'atath", "role": "Ranged Assassin", "aliases": ["Xalatath"], "tags": ["poke", "sustained", "zone", "aoe"], "curve": [2, 2, 3]}
   ]
 }

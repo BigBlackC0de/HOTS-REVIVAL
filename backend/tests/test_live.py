@@ -54,7 +54,7 @@ def test_new_lobby_resets_previous_game():
     s.on_lobby(["B#2"], "braxis_holdout", "appris", "h", None)
     snap = s.snapshot()
     assert snap["game_id"] == first_game + 1 and snap["status"] == "loading"
-    assert snap["levels"]["ally"] == 1 and snap["camps"] == [] and snap["alerts"] == []
+    assert snap["levels"] is None and snap["camps"] == [] and snap["alerts"] == []
     assert snap["clock_s"] is None and snap["map_id"] == "braxis_holdout"
 
 
@@ -101,18 +101,18 @@ def test_battletags_from_lobby_bytes():
     assert extract_battletags(data) == ["Azsra#2154", "Bob#12345"]
 
 
-def test_estimated_clock_after_loading(monkeypatch):
+def test_no_guessed_clock_only_real_one(monkeypatch):
     s = LiveSession()
     s.on_lobby(["A#1"], "battlefield_of_eternity", "appris", None,
                {"first_objective_s": 150, "objective_interval_s": 125, "source": "mesuré"})
-    assert s.snapshot()["status"] == "loading"
     real = time.monotonic
-    monkeypatch.setattr(time, "monotonic", lambda: real() + 95)  # 30 s après les portes
+    monkeypatch.setattr(time, "monotonic", lambda: real() + 300)
     snap = s.snapshot()
-    assert snap["status"] == "in_game" and snap["clock_source"] == "estimée"
-    assert 28 <= snap["clock_s"] <= 32
-    s.sync_clock(40, "écran")  # la lecture d'écran remplace l'estimation
-    assert s.snapshot()["clock_source"] == "écran"
+    assert snap["status"] == "loading" and snap["clock_s"] is None  # rien de deviné
+    assert snap["alerts"] == [] and snap["levels"] is None
+    s.sync_clock(40, "écran")  # horloge lue à l'écran
+    snap = s.snapshot()
+    assert snap["status"] == "in_game" and snap["clock_source"] == "écran"
 
 
 def test_lobby_poller_detects_new_file_even_if_folder_recreated(tmp_path):
@@ -158,20 +158,16 @@ def test_game_already_in_progress_is_resumed(tmp_path):
     s = LiveSession()
     s.on_lobby(info.battletags, "hanamura_temple", "appris", info.map_hash, None, info.age_s)
     snap = s.snapshot()
-    assert snap["status"] == "in_game" and snap["clock_source"] == "estimée"
-    assert 230 <= snap["clock_s"] <= 250  # 300 s depuis le chargement - 65 s
+    assert snap["status"] == "loading" and snap["lobby_players"] == info.battletags  # en attente de l'écran
 
 
-def test_levels_estimated_from_xp_curve_until_real_reading(monkeypatch):
-    from app.analytics.timings import DEFAULT_LEVEL_CURVE
-
+def test_levels_unknown_until_real_reading():
     s = LiveSession()
-    s.start("dragon_shire", None, 400, {"first_objective_s": 75, "objective_interval_s": 180,
-                                        "level_curve": DEFAULT_LEVEL_CURVE})
+    s.start("dragon_shire", None, 400, {"first_objective_s": 75, "objective_interval_s": 180})
     snap = s.snapshot()
-    assert snap["levels"]["source"] == "estimée" and snap["levels"]["ally"] == 10  # 10 à 396 s
+    assert snap["levels"] is None and snap["next_talent"] is None
     assert not any(a["id"] == "talent-disadvantage" for a in snap["alerts"])
-    s.set_levels(ally=None, enemy=13, source="écran")  # vraie lecture : on quitte l'estimation
+    s.set_levels(ally=10, enemy=13, source="écran")
     snap = s.snapshot()
     assert snap["levels"]["source"] == "écran" and snap["levels"]["ally"] == 10 and snap["levels"]["enemy"] == 13
     assert any(a["id"] == "talent-disadvantage" for a in snap["alerts"])
@@ -195,20 +191,6 @@ def test_player_level_curve_from_replays(db):
     assert level_curve(db) == {4: 122, 10: 382}
 
 
-def test_estimates_are_never_spoken():
-    from app.analytics.timings import DEFAULT_LEVEL_CURVE
-
-    s = LiveSession()
-    s.start("dragon_shire", None, 380, {"level_curve": DEFAULT_LEVEL_CURVE, "first_objective_s": 400,
-                                        "objective_interval_s": 180})
-    s.clock_source = "estimée"  # horloge devinée depuis le chargement
-    alerts = s.snapshot()["alerts"]
-    assert not any(a["id"].startswith("tier-") for a in alerts)  # plus de « niveau X dans ≈ N s »
-    assert alerts and all(a["voice"] is False for a in alerts)  # objectif affiché mais pas annoncé
-    s.sync_clock(382, "écran")
-    assert all(a["voice"] for a in s.snapshot()["alerts"])
-
-
 def test_screen_levels_first_reading_is_silent_and_filtered():
     from app.analytics.timings import DEFAULT_LEVEL_CURVE
 
@@ -216,7 +198,7 @@ def test_screen_levels_first_reading_is_silent_and_filtered():
     s.start("dragon_shire", None, 0, {"level_curve": DEFAULT_LEVEL_CURVE})
     s.sync_clock(400, "écran")  # niveau ~10 attendu
     s.set_levels(ally=1, enemy=None, source="écran")  # erreur d'OCR invraisemblable : ignorée
-    assert s.snapshot()["levels"]["source"] == "estimée"
+    assert s.snapshot()["levels"] is None
     s.set_levels(ally=9, enemy=10, source="écran")  # première vraie lecture : rien d'annoncé
     snap = s.snapshot()
     assert snap["levels"]["ally"] == 9 and snap["levels"]["enemy"] == 10

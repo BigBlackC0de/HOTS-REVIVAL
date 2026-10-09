@@ -111,6 +111,51 @@ async function getWorker(): Promise<Worker> {
 }
 
 /** Capture complète ponctuelle (calibrage manuel uniquement). */
+/** Second moteur OCR (lettres) pour l'écran de chargement, libéré dès la partie lancée. */
+let textWorker: Worker | null = null;
+async function getTextWorker(): Promise<Worker> {
+  if (textWorker) return textWorker;
+  await getWorker(); // prépare les données de langue
+  const workerPath = require.resolve("tesseract.js/src/worker-script/node/index.js").replace("app.asar", "app.asar.unpacked");
+  textWorker = await createWorker("eng", 1, {
+    errorHandler: (err: unknown) => console.warn("[ocr]", err),
+    langPath: tessdataPath(), cachePath: path.join(app.getPath("userData"), "tesscache"), gzip: true, workerPath,
+  });
+  await textWorker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
+  return textWorker;
+}
+
+function releaseTextWorker(): void {
+  void textWorker?.terminate();
+  textWorker = null;
+}
+
+const LOADING_SCREEN_WINDOW_MS = 150_000;
+let loadingSeenAt = 0;
+
+/** Écran de chargement : lit les pseudos et les héros des deux équipes (info publique). */
+async function readLoadingScreen(): Promise<void> {
+  const g = await grab([{ x: 0, y: 0, w: 1, h: 1 }], 1);
+  if (!g || g.black) return;
+  const frame = g.crops[0];
+  const w = await getTextWorker();
+  const words = [];
+  for (const threshold of [150, 200]) {
+    const png = nativeImage.createFromBitmap(binarize(frame.data, threshold), { width: frame.width, height: frame.height }).toPNG();
+    const { data } = await w.recognize(png, {}, { blocks: true, text: true });
+    for (const x of data.words ?? []) {
+      if (x.text.trim().length < 2) continue;
+      words.push({
+        text: x.text.trim().slice(0, 64),
+        x: (x.bbox.x0 + x.bbox.x1) / 2 / frame.width, y: (x.bbox.y0 + x.bbox.y1) / 2 / frame.height,
+        h: (x.bbox.y1 - x.bbox.y0) / frame.height,
+      });
+    }
+  }
+  if (DEBUG) console.log("[écran] chargement", JSON.stringify(words.map((x) => x.text)));
+  if (words.length) await post("loading-screen", { words: words.slice(0, 2000) });
+}
+
 export async function captureScreen(): Promise<NativeImage | null> {
   const display = gameDisplay();
   const { width, height } = display.size;
@@ -213,6 +258,7 @@ async function tick(): Promise<void> {
     const live = await fetch(`${BACKEND_URL}/api/live/state`).then((r) => r.json()).catch(() => null);
     if (!live || !["loading", "in_game"].includes(live.status)) {
       if (state !== "idle") stopCapture();
+      releaseTextWorker();
       state = "idle";
       return;
     }
@@ -224,6 +270,7 @@ async function tick(): Promise<void> {
       lastClock = null;
       clockSyncedAt = 0;
       misses = blackCount = 0;
+      loadingSeenAt = Date.now();
     }
     if (!(await startCapture())) {
       state = "error";
@@ -231,6 +278,12 @@ async function tick(): Promise<void> {
     }
     if (state === "idle" || state === "error") state = "starting";
     tickCount++;
+    // Compositions : seulement pendant l'écran de chargement (jamais en pleine partie)
+    if (live.status === "loading" && !live.teams?.complete && Date.now() - loadingSeenAt < LOADING_SCREEN_WINDOW_MS) {
+      if (tickCount % 3 === 0) await readLoadingScreen();
+    } else if (textWorker) {
+      releaseTextWorker();
+    }
     const g = await grab([config.regions.clock, config.regions.ally, config.regions.enemy]);
     if (!g) return;
     if (g.black) {
@@ -263,7 +316,12 @@ async function tick(): Promise<void> {
     }
     const a = ally.push(reading.ally);
     const e = enemy.push(reading.enemy);
-    if (a !== null || e !== null) await post("levels", { ally: a ?? undefined, enemy: e ?? undefined, source: "écran" });
+    if (a !== null || e !== null) {
+      await post("levels", { ally: a ?? undefined, enemy: e ?? undefined, source: "écran" });
+    } else if (!live.levels && (ally.value !== null || enemy.value !== null) && tickCount % 5 === 0) {
+      // lecture stable mais pas encore retenue (horloge pas encore lue) : on la renvoie
+      await post("levels", { ally: ally.value ?? undefined, enemy: enemy.value ?? undefined, source: "écran" });
+    }
 
     // Zones à retrouver si l'horloge OU les niveaux restent illisibles quelques secondes.
     const clockOk = reading.clock !== null || clockFresh;
@@ -306,6 +364,7 @@ export function stopScreenReader(): void {
   if (timer) clearInterval(timer);
   timer = null;
   stopCapture();
+  releaseTextWorker();
   void worker?.terminate();
   worker = null;
 }

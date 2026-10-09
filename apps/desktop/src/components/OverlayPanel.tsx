@@ -65,7 +65,7 @@ export function OverlayPanel({ state, interactive, heroes, maps, onState, previe
           </span>
           <span className="font-mono text-base text-white">
             {status === "loading" ? "chargement" : status === "ended" ? "terminée"
-              : `${s?.clock_source === "estimée" ? "≈ " : ""}${clock(s?.clock_s)}`}
+              : clock(s?.clock_s)}
           </span>
         </div>
       )}
@@ -91,12 +91,7 @@ export function OverlayPanel({ state, interactive, heroes, maps, onState, previe
               </span>
             </div>
           )}
-          {s.levels.source === "estimée" ? (
-            <div className={`${box} flex justify-between`}>
-              <span>Niveau ≈ <b className="text-storm-300">{s.levels.ally}</b> <span className="text-xs text-slate-500">(estimé)</span></span>
-              <span className="text-[11px] text-slate-500">lecture d'écran : Paramètres</span>
-            </div>
-          ) : (
+          {s.levels && (
           <div className={`${box} flex justify-between`}>
             <span>Alliés <b className="text-storm-300">{s.levels.ally}</b></span>
             <span className={s.levels.ally_tier > s.levels.enemy_tier ? "text-emerald-300" : s.levels.ally_tier < s.levels.enemy_tier ? "text-rose-300" : "text-slate-500"}>

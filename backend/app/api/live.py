@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.analytics.profile_stats import talent_stats
@@ -12,7 +13,12 @@ from app.live.session import live_session
 from app.analytics.timings import map_timings
 from app.live.lobby_players import lobby_players
 from app.meta.service import hero_guide
-from app.schemas import LiveCampRequest, LiveHeroRequest, LiveLevelsRequest, LiveStartRequest, LiveSyncRequest
+from app.config import Settings, app_settings
+from app.live.composition import Word, norm, read_composition
+from app.models import MatchPlayer
+from app.schemas import (
+    LiveCampRequest, LiveHeroRequest, LiveLevelsRequest, LiveStartRequest, LiveSyncRequest, LoadingScreenRequest,
+)
 
 router = APIRouter(prefix="/live", tags=["overlay"])
 ws_router = APIRouter()
@@ -81,6 +87,27 @@ def levels(body: LiveLevelsRequest) -> dict:
     ally = body.ally if body.ally is not None else (cur_ally + body.ally_delta if body.ally_delta else None)
     enemy = body.enemy if body.enemy is not None else (cur_enemy + body.enemy_delta if body.enemy_delta else None)
     live_session.set_levels(ally, enemy, body.source)
+    return live_session.snapshot()
+
+
+def my_names(db: Session, settings: Settings) -> set[str]:
+    names = {norm(n) for n in db.scalars(select(MatchPlayer.name).where(MatchPlayer.is_me.is_(True)).distinct())}
+    if settings.player_battletag:
+        names.add(norm(settings.player_battletag.split("#")[0]))
+    return {n for n in names if n}
+
+
+@router.post("/loading-screen")
+def loading_screen(body: LoadingScreenRequest, db: Session = Depends(get_db),
+                   settings: Settings = Depends(app_settings)) -> dict:
+    """Mots lus sur l'écran de chargement -> compositions des deux équipes."""
+    words = [Word(w.text, w.x, w.y, w.h) for w in body.words]
+    entries = read_composition(words, live_session.lobby_players, my_names(db, settings))
+    live_session.add_composition(entries)
+    mine = next((e for e in live_session.composition.values() if e["me"]), None)
+    if mine and not live_session.my_hero_id:  # votre héros, lu à l'écran
+        live_session.my_hero_id = mine["hero_id"]
+        live_session.talent_build = recommended_build(db, mine["hero_id"])
     return live_session.snapshot()
 
 

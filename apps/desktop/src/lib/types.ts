@@ -194,7 +194,8 @@ export interface OverlayState {
   map_source: string | null;
   my_hero_id: string | null;
   lobby_players: string[];
-  levels: { ally: number; enemy: number; ally_tier: number; enemy_tier: number; source: string };
+  levels: { ally: number; enemy: number; ally_tier: number; enemy_tier: number; source: string } | null;
+  teams: Teams | null;
   objective: {
     name: string; map: string; next_in_s: number | null; source: string; samples: number;
     priority: string; tips: string[];
@@ -288,3 +289,6 @@ export interface LobbyPlayer {
   against: { games: number; wins: number };
   top_heroes: string[];
 }
+
+export interface TeamMember { hero_id: string; hero: string; role: string | null; player: string | null; me: boolean }
+export interface Teams { ally: TeamMember[]; enemy: TeamMember[]; sides_known: boolean; complete: boolean }

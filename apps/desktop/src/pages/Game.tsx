@@ -8,7 +8,7 @@ import { api } from "../lib/api";
 import { bridge, type OverlayPrefs, type ReaderState, type ScreenStatus } from "../lib/bridge";
 import { speak } from "../lib/voice";
 import { clock, pct } from "../lib/format";
-import type { HeroMeta, LobbyPlayer, OverlayState } from "../lib/types";
+import type { HeroMeta, LobbyPlayer, OverlayState, TeamMember } from "../lib/types";
 
 const ALERT_TONE = {
   info: "border-storm-400 bg-storm-700/20 text-storm-50",
@@ -23,25 +23,25 @@ const CAMPS = [
   { id: "support", label: "Soutien" },
 ];
 const SOURCE_LABEL: Record<string, string> = {
-  "vos replays": "calibré sur vos replays", mesuré: "mesuré sur replays réels", estimation: "estimation",
+  "vos replays": "calibré sur vos replays", mesuré: "mesuré sur replays réels", estimation: "valeurs de référence",
 };
 
 function Levels({ s, act }: { s: OverlayState; act: (p: Promise<OverlayState>) => void }) {
-  const estimated = s.levels.source === "estimée";
-  const diff = s.levels.ally_tier - s.levels.enemy_tier;
+  const l = s.levels;
+  const diff = l ? l.ally_tier - l.enemy_tier : 0;
   return (
     <Card title="Niveaux & talents">
       <div className="flex items-end justify-around text-center">
         <div>
           <div className="text-xs uppercase text-slate-400">Alliés</div>
-          <div className="text-5xl font-bold text-storm-300">{estimated && "≈"}{s.levels.ally}</div>
+          <div className="text-5xl font-bold text-storm-300">{l ? l.ally : "—"}</div>
         </div>
-        <div className={`pb-2 text-sm font-semibold ${estimated ? "text-slate-500" : diff > 0 ? "text-emerald-300" : diff < 0 ? "text-rose-300" : "text-slate-400"}`}>
-          {estimated ? "estimé" : diff > 0 ? "▲ avantage de talent" : diff < 0 ? "▼ désavantage de talent" : "talents égaux"}
+        <div className={`pb-2 text-sm font-semibold ${!l ? "text-slate-500" : diff > 0 ? "text-emerald-300" : diff < 0 ? "text-rose-300" : "text-slate-400"}`}>
+          {!l ? "" : diff > 0 ? "▲ avantage de talent" : diff < 0 ? "▼ désavantage de talent" : "talents égaux"}
         </div>
         <div>
           <div className="text-xs uppercase text-slate-400">Adverses</div>
-          <div className="text-5xl font-bold text-rose-300">{estimated && "≈"}{s.levels.enemy}</div>
+          <div className="text-5xl font-bold text-rose-300">{l ? l.enemy : "—"}</div>
         </div>
       </div>
       <div className="mt-4 grid grid-cols-4 gap-1">
@@ -50,11 +50,41 @@ function Levels({ s, act }: { s: OverlayState; act: (p: Promise<OverlayState>) =
         <button className="btn-ghost justify-center py-1" onClick={() => act(api.live.levels({ enemy_delta: 1 }))}>Adv. +1</button>
         <button className="btn-ghost justify-center py-1" onClick={() => act(api.live.levels({ enemy_delta: -1 }))}>Adv. −1</button>
       </div>
-      <p className="mt-2 text-xs text-slate-500">
-        {estimated ? "≈ estimation affichée en attendant la lecture de l'écran (jamais annoncée par la voix)."
-          : `Source : ${s.levels.source}`}
-      </p>
+      {l && <p className="mt-2 text-xs text-slate-500">Source : {l.source}</p>}
       <ScreenReaderBadge />
+    </Card>
+  );
+}
+
+const ROLE_FR: Record<string, string> = {
+  Tank: "Tank", Bruiser: "Combattant", Healer: "Soigneur", Support: "Soutien",
+  "Ranged Assassin": "Assassin à distance", "Melee Assassin": "Assassin de mêlée",
+};
+
+/** Compositions lues sur l'écran de chargement. Rien tant qu'elles ne sont pas lues. */
+function TeamsCard({ s }: { s: OverlayState }) {
+  const t = s.teams;
+  if (!t) return null;
+  const column = (title: string, tone: string, members: TeamMember[]) => (
+    <div>
+      <div className={`mb-1 text-xs font-semibold uppercase ${tone}`}>{title}</div>
+      <div className="space-y-1">
+        {members.map((m) => (
+          <div key={m.hero_id + (m.player ?? "")} className={`flex justify-between rounded-md border px-2 py-1 text-sm ${m.me ? "border-gold-400" : "border-void-600"}`}>
+            <span className="text-white">{m.hero}</span>
+            <span className="text-xs text-slate-400">{m.role ? ROLE_FR[m.role] ?? m.role : ""}{m.player ? ` · ${m.player}` : ""}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  return (
+    <Card title="Compositions">
+      <div className="grid grid-cols-2 gap-4">
+        {column(t.sides_known ? "Votre équipe" : "Équipe 1", "text-storm-300", t.ally)}
+        {column(t.sides_known ? "Adversaires" : "Équipe 2", "text-rose-300", t.enemy)}
+      </div>
+      {!t.complete && <p className="mt-2 text-xs text-slate-500">Lecture de l'écran de chargement en cours…</p>}
     </Card>
   );
 }
@@ -96,7 +126,7 @@ function HeroCard({ s, heroes, act }: { s: OverlayState; heroes: Parameters<type
         <div className="mt-3 grid grid-cols-7 gap-1.5">
           {s.talents.map((t) => {
             const next = s.next_talent?.level === t.level;
-            const done = t.level <= s.levels.ally;
+            const done = !!s.levels && t.level <= s.levels.ally;
             return (
               <div key={t.level} className={`rounded-md border p-1.5 text-center ${next ? "border-gold-400 bg-gold-500/10" : done ? "border-void-600 opacity-60" : "border-void-600"}`}>
                 <div className="text-[10px] text-slate-500">Niv. {t.level}</div>
@@ -204,7 +234,7 @@ export function Game() {
           )}
         </div>
         <div className="text-right">
-          <div className="font-mono text-6xl text-white">{s.clock_source === "estimée" && "≈"}{s.status === "in_game" ? clock(s.clock_s) : "–:––"}</div>
+          <div className="font-mono text-6xl text-white">{s.status === "in_game" ? clock(s.clock_s) : "–:––"}</div>
           <div className="mt-1 flex justify-end gap-2">
             <VoiceToggle />
             <button className="btn-ghost py-1" onClick={() => act(api.live.sync(0))}>Horloge à 0:00</button>
@@ -218,6 +248,8 @@ export function Game() {
           {s.alerts.map((a) => <div key={a.id} className={`rounded-lg border-l-4 px-4 py-3 text-lg font-semibold ${ALERT_TONE[a.level]}`}>{a.text}</div>)}
         </div>
       )}
+
+      <TeamsCard s={s} />
 
       <div className="grid grid-cols-3 gap-4">
         <Card title={o ? `Objectif : ${o.name}` : "Objectif"}>
@@ -258,7 +290,7 @@ export function Game() {
 
       <Players gameId={s.game_id} />
       <p className="text-xs text-slate-500">
-        Données : fichier de chargement, horloge et niveaux (lecture d'écran, estimation ou saisie), timers mesurés sur replays. Aucune lecture du jeu.{" "}
+        Données : fichier de chargement, écran de chargement, horloge et niveaux (lecture d'écran ou saisie), timers mesurés sur replays. Aucune lecture du jeu.{" "}
         <Link className="underline" to="/settings">Guide vocal et lecture d'écran</Link>
       </p>
     </div>

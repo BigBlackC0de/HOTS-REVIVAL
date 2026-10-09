@@ -18,7 +18,7 @@ from app.models import Match, Replay, Report
 log = logging.getLogger(__name__)
 
 # À incrémenter quand l'extraction change de manière significative.
-ANALYSIS_VERSION = 2
+ANALYSIS_VERSION = 3  # 3 : nouveaux héros (Xal'atath)
 
 
 def _marker() -> Path:

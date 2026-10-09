@@ -136,6 +136,17 @@ class LiveSyncRequest(BaseModel):
     source: Literal["manuel", "écran"] = "manuel"
 
 
+class ScreenWord(BaseModel):
+    text: str = Field(max_length=64)
+    x: float
+    y: float
+    h: float = 0.02
+
+
+class LoadingScreenRequest(BaseModel):
+    words: list[ScreenWord] = Field(max_length=2000)
+
+
 class LiveHeroRequest(BaseModel):
     hero_id: str = Field(min_length=1, max_length=48)
 
