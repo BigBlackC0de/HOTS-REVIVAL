@@ -170,3 +170,17 @@ def test_lobby_players_history(client):
     assert players["Joueur7#2222"]["against"]["games"] == 1 and players["Joueur7#2222"]["top_heroes"] == ["Kael'thas"]
     assert players["Inconnu#3333"]["with"]["games"] == 0
     live_session.stop()
+
+
+def test_versus_ai_games_flagged_and_excluded_from_stats(client, db):
+    from app.models import Match
+
+    client.post("/api/replays/import", json={})
+    assert client.get("/api/profile").json()["total"]["games"] == 1
+    assert client.get("/api/matches").json()[0]["counted"] is True
+    db.query(Match).update({Match.game_mode: "Versus AI"})
+    db.commit()
+    match = client.get("/api/matches").json()[0]
+    assert match["game_mode"] == "Versus AI" and match["counted"] is False  # pastille, mais toujours listée
+    assert client.get("/api/profile").json()["total"]["games"] == 0
+    assert client.get("/api/profile/progression").json() == []

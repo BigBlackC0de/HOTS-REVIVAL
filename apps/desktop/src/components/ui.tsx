@@ -76,3 +76,21 @@ export function ErrorBox({ message }: { message: string }) {
     </div>
   );
 }
+
+const MODE_FR: Record<string, string> = {
+  "Quick Match": "Partie rapide", "Storm League": "Classée", "Hero League": "Classée (Ligue des héros)",
+  "Team League": "Classée (Ligue par équipe)", "Versus AI": "Contre l'IA", ARAM: "ARAM", Brawl: "Bagarre",
+  "Unranked Draft": "Non classée", Practice: "Entraînement", Custom: "Personnalisée",
+};
+
+/** Mode de jeu ; pastille « hors stats » pour tout ce qui n'est ni partie rapide ni classée. */
+export function ModeLabel({ mode, counted }: { mode: string | null; counted: boolean }) {
+  const label = mode ? MODE_FR[mode] ?? mode : "Mode inconnu";
+  if (counted) return <span>{label}</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="rounded-full border border-amber-400/60 bg-amber-400/15 px-2 py-0.5 text-[11px] font-semibold text-amber-300">{label}</span>
+      <span className="text-[11px] text-slate-500">hors stats</span>
+    </span>
+  );
+}

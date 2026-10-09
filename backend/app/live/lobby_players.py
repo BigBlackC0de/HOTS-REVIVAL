@@ -7,12 +7,13 @@ from collections import Counter
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.analytics.profile_stats import STATS_MODES
 from app.models import Match, MatchPlayer
 
 
 def lobby_players(db: Session, battletags: list[str]) -> list[dict]:
     my_lines = db.scalars(
-        select(MatchPlayer).where(MatchPlayer.is_me.is_(True)).options(
+        select(MatchPlayer).join(Match).where(MatchPlayer.is_me.is_(True), Match.game_mode.in_(STATS_MODES)).options(
             selectinload(MatchPlayer.match).selectinload(Match.players)
         )
     ).all()

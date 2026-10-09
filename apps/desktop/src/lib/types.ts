@@ -66,6 +66,7 @@ export interface MatchSummary {
   map_id: string;
   map_name: string;
   game_mode: string | null;
+  counted: boolean; // partie rapide ou classée (sinon : hors statistiques)
   played_at: string | null;
   duration_s: number;
   winner_team: number | null;

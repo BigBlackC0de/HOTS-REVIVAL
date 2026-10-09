@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session, selectinload
 from app.models import Match, MatchPlayer
 from app.talents import talent_name
 
+# Seules ces parties comptent dans les statistiques (contre l'IA, ARAM, personnalisées… : non)
+STATS_MODES = ("Quick Match", "Storm League", "Hero League", "Team League")
 PRIOR_GAMES = 6  # lissage bayésien vers 50 % pour les petits échantillons
 MIN_GAMES = 3
 
@@ -60,7 +62,7 @@ def my_match_lines(db: Session, limit: int | None = None) -> list[MatchPlayer]:
     stmt = (
         select(MatchPlayer)
         .join(Match)
-        .where(MatchPlayer.is_me.is_(True))
+        .where(MatchPlayer.is_me.is_(True), Match.game_mode.in_(STATS_MODES))
         .options(selectinload(MatchPlayer.score), selectinload(MatchPlayer.match))
         .order_by(Match.played_at.desc().nullslast(), Match.id.desc())
     )
@@ -139,7 +141,9 @@ def progression(db: Session) -> list[dict]:
 def talent_stats(db: Session, hero_id: str) -> list[dict]:
     """Taux de victoire / popularité des talents d'un héros sur l'ensemble des
     joueurs présents dans les replays importés (données publiques post-partie)."""
-    rows = db.scalars(select(MatchPlayer).where(MatchPlayer.hero_id == hero_id))
+    rows = db.scalars(
+        select(MatchPlayer).join(Match).where(MatchPlayer.hero_id == hero_id, Match.game_mode.in_(STATS_MODES))
+    )
     tiers: dict[int, dict[str, Bucket]] = defaultdict(lambda: defaultdict(Bucket))
     tier_games: dict[int, int] = defaultdict(int)
     for mp in rows:

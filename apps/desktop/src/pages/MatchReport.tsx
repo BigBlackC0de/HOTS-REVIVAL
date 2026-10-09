@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Bar, Card, ErrorBox, List, Loading } from "../components/ui";
+import { Bar, Card, ErrorBox, List, Loading, ModeLabel } from "../components/ui";
 import { ScoreRadar } from "../components/ScoreRadar";
 import { useAsync } from "../hooks/useAsync";
 import { api } from "../lib/api";
@@ -61,7 +61,7 @@ export function MatchReport() {
         <div>
           <Link to="/matches" className="text-xs text-slate-400 hover:text-white">← Parties</Link>
           <h1 className="title-display text-3xl">{m.map_name}</h1>
-          <p className="text-sm text-slate-400">{m.game_mode ?? "–"} · {clock(m.duration_s)} · {me?.hero_name}</p>
+          <p className="text-sm text-slate-400"><ModeLabel mode={m.game_mode} counted={m.counted} /> · {clock(m.duration_s)} · {me?.hero_name}</p>
         </div>
         <div className="text-right">
           <div className="text-xs uppercase tracking-widest text-slate-400">HEROS SCORE</div>

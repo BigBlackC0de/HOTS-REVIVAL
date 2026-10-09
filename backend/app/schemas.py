@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+
+from app.analytics.profile_stats import STATS_MODES
 
 from app.talents import with_names
 
@@ -71,6 +73,12 @@ class MatchSummaryOut(ORM):
     duration_s: int
     winner_team: int | None
     me: MatchPlayerOut | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def counted(self) -> bool:
+        """Partie rapide ou classée : prise en compte dans les statistiques."""
+        return self.game_mode in STATS_MODES
 
 
 class MatchDetailOut(MatchSummaryOut):
