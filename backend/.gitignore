@@ -8,3 +8,4 @@ dist/
 *.spec
 !hots-backend.spec
 .pytest_cache/
+*.egg-info/
