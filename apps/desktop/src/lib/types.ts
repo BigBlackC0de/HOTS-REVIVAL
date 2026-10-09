@@ -199,3 +199,14 @@ export interface Compliance {
   forbidden: string[];
   statement: string;
 }
+
+export interface AppSettings {
+  replay_dir: string;
+  replay_dir_detected: string | null;
+  replay_dir_exists: boolean;
+  player_battletag: string;
+  player_toon_handle: string | null;
+  claude_model: string;
+  has_api_key: boolean;
+  data_dir: string;
+}

@@ -38,8 +38,11 @@ export function Dashboard() {
   if (!p.total.games)
     return (
       <Empty title="Bienvenue dans HOTS REVIVAL">
-        Aucune partie importée pour l'instant. Lancez une partie : le replay sera analysé automatiquement à la fin,
-        ou importez vos replays existants depuis les <Link className="text-storm-300 underline" to="/settings">paramètres</Link>.
+        <p>Jouez une partie : à la fin, elle est analysée automatiquement et votre rapport apparaît ici.</p>
+        <div className="mt-5 flex justify-center gap-3">
+          <Link className="btn-gold" to="/settings">Importer mes anciens replays</Link>
+          <Link className="btn-ghost" to="/settings">Activer le coach IA</Link>
+        </div>
       </Empty>
     );
 

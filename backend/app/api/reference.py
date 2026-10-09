@@ -3,17 +3,28 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app import __version__
 from app.analytics.profile_stats import talent_stats
 from app.db import get_db
 from app.live.compliance import describe
 from app.reference import registry
+from app.replay.protocol import available_builds, load_protocol
 
 router = APIRouter(tags=["référentiel"])
 
 
 @router.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "version": __version__}
+
+
+@router.get("/health/replay-parser")
+def replay_parser_health() -> dict:
+    """Vérifie que les protocoles officiels de lecture des replays sont chargeables."""
+    builds = available_builds()
+    protocol = load_protocol()
+    return {"protocols": len(builds), "latest_build": builds[-1],
+            "loaded": hasattr(protocol, "decode_replay_tracker_events")}
 
 
 @router.get("/compliance")

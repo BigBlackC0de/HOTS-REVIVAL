@@ -66,3 +66,14 @@ def test_live_endpoints(client):
     assert client.post("/api/live/camp", json={"camp_type": "boss"}).json()["camps"][0]["camp"] == "boss"
     assert client.post("/api/live/stop").json()["status"] == "idle"
     assert client.get("/api/compliance").json()["forbidden"]
+
+
+def test_settings_roundtrip(client, tmp_path):
+    s = client.get("/api/settings").json()
+    assert s["has_api_key"] is False and s["replay_dir_exists"] is True
+    assert client.put("/api/settings", json={"replay_dir": str(tmp_path / "absent")}).status_code == 400
+    r = client.put("/api/settings", json={"player_battletag": "Azsra#2154", "anthropic_api_key": "sk-test"})
+    body = r.json()
+    assert body["player_battletag"] == "Azsra#2154" and body["has_api_key"] is True
+    assert "sk-test" not in r.text  # la clé n'est jamais renvoyée
+    assert client.get("/api/coach/status").json()["available"] is True

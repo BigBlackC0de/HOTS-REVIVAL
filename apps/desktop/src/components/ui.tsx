@@ -72,7 +72,7 @@ export function ErrorBox({ message }: { message: string }) {
   return (
     <div className="card border-rose-800 text-sm text-rose-300">
       {message}
-      <div className="mt-1 text-xs text-slate-400">Vérifiez que le backend local est démarré (port 8765).</div>
+      <div className="mt-1 text-xs text-slate-400">Le moteur d&apos;analyse ne répond pas : fermez puis relancez HOTS REVIVAL.</div>
     </div>
   );
 }

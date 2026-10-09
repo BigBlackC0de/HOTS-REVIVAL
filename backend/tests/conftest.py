@@ -1,6 +1,9 @@
 import os
+import tempfile
 
 import pytest
+
+os.environ["HOTS_DATA_DIR"] = tempfile.mkdtemp(prefix="hots-test-")
 
 os.environ.setdefault("HOTS_DATABASE_URL", "sqlite://")
 os.environ["HOTS_WATCH_REPLAYS"] = "false"

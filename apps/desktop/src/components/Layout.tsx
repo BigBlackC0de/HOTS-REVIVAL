@@ -42,7 +42,7 @@ export function Layout() {
         <div className="mt-auto space-y-2 text-xs text-slate-500">
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-400" : "bg-rose-500"}`} />
-            {connected ? "Backend connecté" : "Backend hors ligne"}
+            {connected ? "Moteur d'analyse actif" : "Moteur d'analyse arrêté"}
           </div>
           <div>Partie : {state?.status === "in_game" ? "en cours" : state?.status === "loading" ? "chargement" : "aucune"}</div>
           {bridge() && <button className="btn-ghost w-full justify-center" onClick={() => bridge()?.toggleOverlay()}>Overlay (Ctrl+Shift+O)</button>}

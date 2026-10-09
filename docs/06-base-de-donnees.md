@@ -1,6 +1,6 @@
 # 6. Base de données
 
-PostgreSQL 16 (JSONB pour les données semi-structurées). Le DDL complet est généré depuis les modèles : [`backend/sql/schema.sql`](../backend/sql/schema.sql) (`python backend/scripts/export_schema.py`).
+SQLite pour l’application installée (aucune installation requise), PostgreSQL 16 (JSONB) pour le mode serveur et la V2 cloud — même schéma via SQLAlchemy. Le DDL complet est généré depuis les modèles : [`backend/sql/schema.sql`](../backend/sql/schema.sql) (`python backend/scripts/export_schema.py`).
 
 ## 6.1 Modèle entité-association
 

@@ -1,6 +1,6 @@
 import { bridge } from "./bridge";
 import type {
-  Compliance, DraftResult, Hero, MapInfo, MatchDetail, MatchSummary, OverlayState, Profile,
+  AppSettings, Compliance, DraftResult, Hero, MapInfo, MatchDetail, MatchSummary, OverlayState, Profile,
   ProgressionPoint, Report, ReplayStatus,
 } from "./types";
 
@@ -47,6 +47,9 @@ export const api = {
     post<{ imported: number; duplicates: number; failed: number; match_ids: number[] }>("/replays/import", { path }),
   analyzeDraft: (body: { allies: string[]; enemies: string[]; bans: string[]; map_id: string | null }) =>
     post<DraftResult>("/draft/analyze", body),
+  settings: () => request<AppSettings>("/settings"),
+  saveSettings: (body: Partial<{ replay_dir: string; player_battletag: string; anthropic_api_key: string; claude_model: string }>) =>
+    request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
   coachStatus: () => request<{ available: boolean; model: string }>("/coach/status"),
   live: {
     state: () => request<OverlayState>("/live/state"),

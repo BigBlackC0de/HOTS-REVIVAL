@@ -1,0 +1,116 @@
+# Construit l'installeur Windows (HOTS-REVIVAL-Setup-x.y.z.exe) et le publie dans les Releases GitHub.
+name: Installeur Windows
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tests backend (dont conformité Blizzard)
+        working-directory: backend
+        run: |
+          pip install -e ".[dev]"
+          pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Typecheck desktop
+        working-directory: apps/desktop
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: |
+          npm ci
+          npm run typecheck
+
+  windows:
+    needs: tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compiler le moteur d'analyse (PyInstaller)
+        working-directory: backend
+        run: |
+          pip install . pyinstaller
+          pyinstaller hots-backend.spec --noconfirm
+
+      - name: Vérifier l'exécutable du moteur
+        working-directory: backend
+        shell: pwsh
+        run: |
+          $env:HOTS_DATA_DIR = "$env:RUNNER_TEMP\hots-smoke"
+          $p = Start-Process -FilePath "dist\hots-backend\hots-backend.exe" -ArgumentList "--port","8765" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            try {
+              $r = Invoke-RestMethod "http://127.0.0.1:8765/api/health/replay-parser"
+              if ($r.loaded) { $ok = $true; break }
+            } catch { Start-Sleep -Seconds 1 }
+          }
+          Stop-Process -Id $p.Id -Force
+          if (-not $ok) {
+            Get-ChildItem "$env:HOTS_DATA_DIR" -Filter *.log | Get-Content
+            throw "Le moteur ne répond pas"
+          }
+          Write-Host "Moteur OK : $($r.protocols) protocoles, build $($r.latest_build)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Construire l'installeur
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run dist
+
+      - name: Artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HOTS-REVIVAL-Setup
+          path: apps/desktop/release/*.exe
+          if-no-files-found: error
+
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Get-Content apps/desktop/package.json | ConvertFrom-Json).version
+          if ("${{ github.ref_type }}" -eq "tag") { $tag = "${{ github.ref_name }}" } else { $tag = "v$v-build.${{ github.run_number }}" }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Publier dans les Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: HOTS REVIVAL ${{ steps.version.outputs.tag }}
+          prerelease: ${{ github.ref_type != 'tag' }}
+          files: apps/desktop/release/*.exe
+          body: |
+            ## Installation
+            1. Téléchargez **HOTS-REVIVAL-Setup-*.exe** ci-dessous.
+            2. Double-cliquez dessus : l'application s'installe et se lance toute seule.
+            3. Si Windows affiche « Windows a protégé votre ordinateur », cliquez sur **Informations complémentaires** puis **Exécuter quand même** (l'application n'est pas encore signée numériquement).
+
+            Vos replays sont détectés et analysés automatiquement. Lancez Heroes of the Storm en **plein écran fenêtré** pour voir l'overlay.

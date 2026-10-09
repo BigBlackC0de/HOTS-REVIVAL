@@ -11,7 +11,7 @@
     "dev:web": "vite",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "build": "tsc -p tsconfig.json --noEmit && vite build && tsc -p tsconfig.electron.json",
-    "dist": "npm run build && electron-builder --win"
+    "dist": "npm run build && electron-builder --win --publish never"
   },
   "dependencies": {
     "@sentry/electron": "5.7.0",
@@ -39,9 +39,44 @@
   "build": {
     "appId": "gg.hotsrevival.desktop",
     "productName": "HOTS REVIVAL",
-    "directories": { "output": "release" },
-    "files": ["dist/**", "dist-electron/**", "package.json"],
-    "extraResources": [{ "from": "../../backend/dist/hots-backend", "to": "backend", "filter": ["**/*"] }],
-    "win": { "target": "nsis" }
+    "artifactName": "HOTS-REVIVAL-Setup-${version}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../backend/dist/hots-backend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "HOTS REVIVAL",
+      "deleteAppDataOnUninstall": false
+    }
   }
 }

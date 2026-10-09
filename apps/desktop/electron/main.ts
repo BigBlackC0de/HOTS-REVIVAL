@@ -1,13 +1,19 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import * as Sentry from "@sentry/electron/main";
 import path from "node:path";
-import { startBackend, stopBackend } from "./backend";
+import { backendLogPath, ensureBackend, stopBackend } from "./backend";
 import { createOverlay, setInteractive, toggleOverlay } from "./overlay";
 import { registerShortcuts, SHORTCUTS, unregisterShortcuts } from "./shortcuts";
 
 if (process.env.HOTS_SENTRY_DSN) Sentry.init({ dsn: process.env.HOTS_SENTRY_DSN });
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
+let mainWindow: BrowserWindow | null = null;
+
+const SPLASH = `<!doctype html><html><body style="margin:0;height:100vh;display:flex;flex-direction:column;
+align-items:center;justify-content:center;background:#0b0d1a;color:#cbd5e1;font-family:Segoe UI,sans-serif">
+<div style="font:700 42px Georgia,serif;letter-spacing:2px;color:#f5c451">HOTS <span style="color:#46a8ff">REVIVAL</span></div>
+<div style="margin-top:12px;font-size:14px;opacity:.8">Démarrage de votre coach…</div></body></html>`;
 
 function loadRoute(win: BrowserWindow, route: string): void {
   if (DEV_URL) void win.loadURL(`${DEV_URL}#${route}`);
@@ -34,28 +40,52 @@ function createMainWindow(): BrowserWindow {
     void shell.openExternal(url);
     return { action: "deny" };
   });
-  loadRoute(win, "/");
+  void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(SPLASH)}`);
   return win;
 }
 
-app.whenReady().then(() => {
-  startBackend();
-  const main = createMainWindow();
-  createOverlay(loadRoute);
-  registerShortcuts();
+// Une seule instance : un double-clic sur le raccourci ramène la fenêtre existante.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
 
-  ipcMain.handle("overlay:toggle", () => toggleOverlay());
-  ipcMain.handle("overlay:interactive", (_e, value: boolean) => setInteractive(Boolean(value)));
-  ipcMain.handle("shortcuts:list", () =>
-    Object.fromEntries(Object.entries(SHORTCUTS).map(([k, v]) => [k, v.label])),
-  );
+  app.whenReady().then(async () => {
+    mainWindow = createMainWindow();
+    mainWindow.on("closed", () => app.quit());
 
-  main.on("closed", () => app.quit());
-});
+    ipcMain.handle("overlay:toggle", () => toggleOverlay());
+    ipcMain.handle("overlay:interactive", (_e, value: boolean) => setInteractive(Boolean(value)));
+    ipcMain.handle("shortcuts:list", () =>
+      Object.fromEntries(Object.entries(SHORTCUTS).map(([k, v]) => [k, v.label])),
+    );
+    ipcMain.handle("app:open-path", (_e, target: "logs" | "data") =>
+      shell.openPath(target === "logs" ? backendLogPath() : app.getPath("userData")),
+    );
 
-app.on("will-quit", () => {
-  unregisterShortcuts();
-  stopBackend();
-});
+    const ok = await ensureBackend();
+    if (!ok) {
+      await dialog.showMessageBox({
+        type: "error",
+        title: "HOTS REVIVAL",
+        message: "Le moteur d'analyse n'a pas pu démarrer.",
+        detail: `Journal : ${backendLogPath()}\nVérifiez qu'aucun antivirus ne bloque l'application, puis relancez-la.`,
+      });
+    }
+    if (mainWindow) loadRoute(mainWindow, "/");
+    createOverlay(loadRoute);
+    registerShortcuts();
+  });
 
-app.on("window-all-closed", () => app.quit());
+  app.on("will-quit", () => {
+    unregisterShortcuts();
+    stopBackend();
+  });
+
+  app.on("window-all-closed", () => app.quit());
+}

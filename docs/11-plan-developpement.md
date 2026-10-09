@@ -10,9 +10,9 @@
 |---|---|---|---|
 | Dev | `uvicorn --reload` | PostgreSQL docker ou SQLite | clé développeur |
 | Test/CI | TestClient | SQLite mémoire | désactivée (repli déterministe) |
-| Prod (MVP) | exécutable PyInstaller lancé par Electron | PostgreSQL local *ou* SQLite embarqué (choix d'installation) | clé utilisateur (MVP) → proxy cloud (V2) |
+| Prod (MVP) | exécutable PyInstaller lancé par Electron | SQLite dans `%APPDATA%\\HOTS REVIVAL` | clé saisie dans Paramètres (MVP) → proxy cloud (V2) |
 
-> Note MVP : imposer PostgreSQL à un joueur est lourd. L'ORM est compatible SQLite ; l'installateur peut utiliser `sqlite:///%APPDATA%/HOTS REVIVAL/hots.db` par défaut et PostgreSQL pour le mode cloud/équipe.
+> L'application installée utilise SQLite (aucune installation de base de données). PostgreSQL reste disponible via `HOTS_DATABASE_URL` pour le mode serveur/équipe et la V2 cloud.
 
 ## 11.3 CI (GitHub Actions, à ajouter en S0)
 1. `backend` : `pip install -e .[dev]` → `pytest` (inclut `test_compliance.py`).
@@ -29,16 +29,17 @@
 | E2E UI | Playwright | parcours Dashboard → Rapport → Coach ; overlay |
 | Manuel | — | partie réelle avec overlay (FPS, lisibilité, raccourcis) |
 
-## 11.5 Packaging Windows
-```bash
-# backend → backend/dist/hots-backend/hots-backend.exe
-cd backend
-pyinstaller run.py --name hots-backend --onedir --noconfirm \
-  --collect-all heroprotocol --add-data "app/data;app/data"
-# desktop → apps/desktop/release/HOTS REVIVAL Setup x.y.z.exe
-cd ../apps/desktop && npm run dist
-```
-Points à valider en S4 : chargement des modules `protocolNNNNN.py` dans l'exécutable figé (`--collect-all heroprotocol`), signature de code, antivirus (faux positifs PyInstaller).
+## 11.5 Packaging Windows (installeur double-clic)
+Entièrement automatisé par `.github/workflows/windows-installer.yml` (runner `windows-latest`) :
+1. tests backend + typecheck desktop (Ubuntu) ;
+2. `pyinstaller backend/hots-backend.spec` → `backend/dist/hots-backend/hots-backend.exe` (sans console ; les sources des protocoles heroprotocol sont embarquées en données) ;
+3. test de fumée : l'exécutable démarre et `/api/health/replay-parser` confirme le chargement des protocoles ;
+4. `npm run dist` → `apps/desktop/release/HOTS-REVIVAL-Setup-x.y.z.exe` (NSIS « one-click », installation par utilisateur, raccourcis Bureau/Menu Démarrer, lancement automatique) ;
+5. publication dans les Releases GitHub (pré-version pour chaque push, version stable pour un tag `v*`).
+
+Au lancement, Electron démarre le moteur (`HOTS_DATA_DIR=%APPDATA%\HOTS REVIVAL`), affiche un écran d'attente jusqu'à ce que `/api/health` réponde, puis charge l'interface. Une seule instance est autorisée. La base SQLite, `settings.json` (réglages saisis dans l'interface) et `backend.log` vivent dans ce dossier.
+
+Restant à faire : certificat de signature de code (SmartScreen), mise à jour automatique (electron-updater), polices embarquées pour le mode hors ligne.
 
 ## 11.6 Jalons détaillés (30 jours)
 | Jour | Tâches |

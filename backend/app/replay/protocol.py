@@ -19,6 +19,8 @@ _PROTOCOL_RE = re.compile(r"protocol(\d+)\.py$")
 
 
 def _versions_dir() -> Path:
+    if getattr(sys, "frozen", False):  # exécutable PyInstaller : sources copiées en données
+        return Path(getattr(sys, "_MEIPASS")) / "heroprotocol" / "versions"
     spec = importlib.util.find_spec("heroprotocol")
     if spec is None or spec.origin is None:
         raise RuntimeError("Le paquet 'heroprotocol' est introuvable (pip install heroprotocol).")

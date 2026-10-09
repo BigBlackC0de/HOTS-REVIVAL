@@ -57,7 +57,7 @@ export function Coach() {
         <div>
           <h1 className="title-display text-3xl">Coach IA</h1>
           <p className="text-xs text-slate-400">
-            {status.data?.available ? `Propulsé par Claude (${status.data.model})` : "Mode hors-ligne : configurez votre clé Claude dans les paramètres."}
+            {status.data?.available ? `Propulsé par Claude (${status.data.model})` : "Coach IA inactif : ajoutez votre clé Claude dans Paramètres."}
           </p>
         </div>
         <select className="w-72" value={matchId ?? ""} onChange={(e) => { setMatchId(e.target.value ? Number(e.target.value) : null); setConversationId(null); setMessages([]); }}>

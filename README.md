@@ -27,34 +27,30 @@ HOTS REVIVAL vise à devenir le « Porofessor » de Heroes of the Storm : profil
 | 6. Post Game Report | Résumé, points forts / faibles, moments clés, erreurs, actions excellentes, plan d'amélioration | `analytics/report.py`, page Rapport |
 | 7. HEROS SCORE | Placement, Macro, Teamfight, Objectifs, Survie, Draft → note /100 | `analytics/heros_score.py` |
 
-## Démarrage rapide (développement)
+## Installation (joueurs)
 
-Prérequis : Python ≥ 3.11, Node.js ≥ 20, (optionnel) Docker pour PostgreSQL.
+1. Ouvrez la page **[Releases](https://github.com/BigBlackC0de/HOTS-REVIVAL/releases)** et téléchargez `HOTS-REVIVAL-Setup-x.y.z.exe`.
+2. **Double-cliquez** dessus : l'application s'installe (sans droits administrateur), crée un raccourci sur le Bureau et se lance.
+3. Si Windows affiche « Windows a protégé votre ordinateur » : **Informations complémentaires → Exécuter quand même** (l'exécutable n'est pas encore signé numériquement).
+
+C'est tout : aucune commande, aucune base de données à installer, aucun fichier à modifier.
+- Le dossier de replays (`Documents\Heroes of the Storm\Accounts\…\Replays\Multiplayer`) et votre compte sont **détectés automatiquement** ; vos anciens replays sont importés au premier lancement, puis chaque nouvelle partie est analysée dès sa fin.
+- Pour activer le coach IA, collez votre clé Claude dans **Paramètres** (optionnel).
+- Lancez Heroes of the Storm en **plein écran fenêtré** pour voir l'overlay.
+- Données et journal : `%APPDATA%\HOTS REVIVAL\`.
+
+L'installeur est construit automatiquement sur un serveur Windows (GitHub Actions, `.github/workflows/windows-installer.yml`) à chaque mise à jour du code : tests, compilation du moteur d'analyse, vérification qu'il démarre, création de l'installeur, publication dans les Releases.
+
+## Développement
+
+Prérequis : Python ≥ 3.11, Node.js ≥ 20.
 
 ```bash
-# 1. Base de données
-docker compose up -d                      # ou HOTS_DATABASE_URL=sqlite:///hots.db
-
-# 2. Backend
-cd backend
-python -m venv .venv && .venv\Scripts\activate      # (Linux/macOS : source .venv/bin/activate)
-pip install -e ".[dev]"
-copy .env.example .env                              # renseigner HOTS_REPLAY_DIR et ANTHROPIC_API_KEY
-python scripts/seed_demo.py                         # (optionnel) 30 parties de démonstration
-uvicorn app.main:app --port 8765 --reload           # API + docs interactives : http://127.0.0.1:8765/docs
-pytest                                              # tests (dont conformité)
-
-# 3. Application desktop
-cd ../apps/desktop
-npm install
-npm run dev                                         # Vite + Electron (HOTS_SPAWN_BACKEND=1 pour lancer le backend automatiquement)
+cd backend && pip install -e ".[dev]" && pytest          # tests (dont conformité)
+uvicorn app.main:app --port 8765 --reload                 # API : http://127.0.0.1:8765/docs
+cd ../apps/desktop && npm install && npm run dev          # Vite + Electron
 ```
-
-Dossier de replays par défaut (détecté automatiquement sinon) :
-`C:\Users\azsra\Documents\Heroes of the Storm\Accounts\137044993\2-Hero-1-1278570\Replays\Multiplayer`
-— le joueur local est identifié par le *toon handle* `2-Hero-1-1278570` déduit du chemin.
-
-Le jeu doit être en **plein écran fenêtré** pour que l'overlay soit visible.
+Par défaut la base est un fichier SQLite dans le dossier de données ; `HOTS_DATABASE_URL=postgresql+psycopg://…` bascule sur PostgreSQL (`docker compose up -d`) pour le mode serveur/équipe. `python scripts/seed_demo.py` crée 30 parties de démonstration.
 
 ### Raccourcis de l'overlay (ils n'envoient aucune touche au jeu)
 | Raccourci | Action |
@@ -89,5 +85,6 @@ React · TypeScript · Tailwind · Electron · Python · FastAPI · PostgreSQL �
 - Les timings d'objectifs (`backend/app/data/maps.json`) sont indicatifs (`verified: false`) et affichés comme estimations.
 - Les profils de héros du Draft Assistant et les seuils du HEROS SCORE sont des valeurs éditoriales v1, à calibrer sur données.
 - Le schéma est créé par `create_all` ; les migrations Alembic arrivent avant la première release publique.
+- L'installeur n'est pas signé (avertissement SmartScreen) : un certificat de signature de code est à prévoir avant la diffusion publique.
 
 *Heroes of the Storm est une marque de Blizzard Entertainment. HOTS REVIVAL est un projet indépendant, non affilié à Blizzard.*
