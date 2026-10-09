@@ -32,6 +32,8 @@ _CACHE_PATH_RE = re.compile(
 )
 _MAP_STRING_ID_RE = re.compile(r'mAPMapStringID\s*=\s*"([^"]+)"', re.IGNORECASE)
 _DOC_NAME_RE = re.compile(r"^DocInfo/Name=(.+)$", re.MULTILINE)
+_SCRIPT_NAME_RE = re.compile(r"^//\s*Name:\s*(.+?)\s*$", re.MULTILINE)
+_ICON_NAME_RE = re.compile(r"MapSelect_(\w+?)\.png", re.IGNORECASE)
 _IGNORED_TAG_NAMES = {"blizzmaps"}
 
 
@@ -107,22 +109,29 @@ def _cache_candidates(info: LobbyInfo) -> list[Path]:
     return out
 
 
-def _read_map_name_from_s2ma(path: Path) -> str | None:
+def _read_map_names_from_s2ma(path: Path) -> list[str]:
+    """Noms possibles de la carte, du plus fiable au moins fiable. L'identifiant interne
+    (mAPMapStringID) est parfois un nom de code (« Crypts » pour Tomb of the Spider Queen) :
+    on essaie donc aussi le nom en tête du script, le nom localisé et l'icône de sélection."""
     import mpyq
 
     archive = mpyq.MPQArchive(str(path), listfile=False)
+    names: list[str] = []
     script = archive.read_file("MapScript.galaxy")
     if script:
-        m = _MAP_STRING_ID_RE.search(script.decode("utf-8", errors="ignore"))
-        if m:
-            return m.group(1)
+        text = script.decode("utf-8", errors="ignore")
+        if m := _SCRIPT_NAME_RE.search(text):
+            names.append(m.group(1).strip())
+        if m := _MAP_STRING_ID_RE.search(text):
+            names.append(m.group(1))
     for locale in ("enUS", "frFR"):
         strings = archive.read_file(f"{locale}.StormData\\LocalizedData\\GameStrings.txt")
-        if strings:
-            m = _DOC_NAME_RE.search(strings.decode("utf-8", errors="ignore"))
-            if m:
-                return m.group(1).strip()
-    return None
+        if strings and (m := _DOC_NAME_RE.search(strings.decode("utf-8", errors="ignore"))):
+            names.append(m.group(1).strip())
+    doc = archive.read_file("DocumentInfo")
+    if doc and (m := _ICON_NAME_RE.search(doc.decode("utf-8", errors="ignore"))):
+        names.append(re.sub(r"(?<=[a-z])(?=[A-Z])", " ", m.group(1)))  # TombOfTheSpiderQueen
+    return names
 
 
 def resolve_lobby_map(info: LobbyInfo) -> LobbyInfo:
@@ -136,11 +145,13 @@ def resolve_lobby_map(info: LobbyInfo) -> LobbyInfo:
         try:
             if not candidate.is_file():
                 continue
-            name = _read_map_name_from_s2ma(candidate)
+            names = _read_map_names_from_s2ma(candidate)
         except Exception:  # format de cache inattendu : on retombe sur l'apprentissage
             log.debug("Lecture impossible de %s", candidate, exc_info=True)
             continue
-        guessed = registry().guess_map(name) if name else None
+        guessed = next((g for g in map(registry().guess_map, names) if g), None)
+        if not guessed:
+            log.warning("Carte non reconnue dans le cache : %s", names)
         if guessed:
             info.map_id, info.map_source = guessed.id, "cache Battle.net"
             learn_map(info.map_hash, guessed.id)
