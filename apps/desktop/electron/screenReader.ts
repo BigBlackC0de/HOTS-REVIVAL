@@ -26,6 +26,10 @@ const INTERVAL_MS = 1000;
 const CLOCK_EVERY_TICKS = 3; // horloge déjà calée : vérification toutes les 3 s suffit
 const LOCATE_AFTER_MISSES = 4;
 const LOCATE_COOLDOWN_MS = 8000;
+// Côté de votre équipe : 3 lectures concordantes pour le fixer, puis verrouillé (il ne change
+// jamais en cours de partie ; l'animation de montée de niveau change la couleur des chiffres).
+const SIDE_VOTES_TO_SET = 3;
+const SIDE_VOTES_TO_FLIP = 20;
 let config: ScreenReaderConfig = { enabled: true, regions: DEFAULT_REGIONS, regionsSource: "défaut", version: CONFIG_VERSION };
 let worker: Worker | null = null;
 let timer: NodeJS.Timeout | null = null;
@@ -314,7 +318,7 @@ async function tick(): Promise<void> {
     if (side !== null) {
       sideVotes = side === sideVote ? sideVotes + 1 : 1;
       sideVote = side;
-      if (sideVotes >= 3 && side !== allySide) {
+      if (side !== allySide && sideVotes >= (allySide === null ? SIDE_VOTES_TO_SET : SIDE_VOTES_TO_FLIP)) {
         if (allySide !== null) console.log("[écran] côté de l'équipe corrigé", side ? "droite" : "gauche");
         allySide = side;
         ally.reset();
