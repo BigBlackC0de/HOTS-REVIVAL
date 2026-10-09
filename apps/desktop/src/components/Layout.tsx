@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useLive } from "../hooks/useLive";
 import { bridge } from "../lib/bridge";
+import { UpdateButton } from "./UpdateButton";
 
 const NAV = [
   { to: "/", label: "Tableau de bord", icon: "◆" },
@@ -41,6 +42,7 @@ export function Layout() {
           ))}
         </nav>
         <div className="mt-auto space-y-2 text-xs text-slate-500">
+          <UpdateButton />
           <div className="flex items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-400" : "bg-rose-500"}`} />
             {connected ? "Moteur d'analyse actif" : "Moteur d'analyse arrêté"}

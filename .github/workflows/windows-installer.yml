@@ -78,10 +78,19 @@ jobs:
         with:
           node-version: 22
 
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart("v") } else { $v = "0.2.${{ github.run_number }}" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "tag=v$v" >> $env:GITHUB_OUTPUT
+
       - name: Construire l'installeur
         working-directory: apps/desktop
         run: |
           npm ci
+          npm version ${{ steps.version.outputs.version }} --no-git-tag-version --allow-same-version
           npm run dist
 
       - name: Artefact
@@ -91,14 +100,6 @@ jobs:
           path: apps/desktop/release/*.exe
           if-no-files-found: error
 
-      - name: Version
-        id: version
-        shell: pwsh
-        run: |
-          $v = (Get-Content apps/desktop/package.json | ConvertFrom-Json).version
-          if ("${{ github.ref_type }}" -eq "tag") { $tag = "${{ github.ref_name }}" } else { $tag = "v$v-build.${{ github.run_number }}" }
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-
       - name: Publier dans les Releases
         uses: softprops/action-gh-release@v2
         with:
@@ -106,11 +107,16 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: HOTS REVIVAL ${{ steps.version.outputs.tag }}
           prerelease: ${{ github.ref_type != 'tag' }}
-          files: apps/desktop/release/*.exe
+          files: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.exe.blockmap
+            apps/desktop/release/latest.yml
           body: |
             ## Installation
             1. Téléchargez **HOTS-REVIVAL-Setup-*.exe** ci-dessous.
             2. Double-cliquez dessus : l'application s'installe et se lance toute seule.
             3. Si Windows affiche « Windows a protégé votre ordinateur », cliquez sur **Informations complémentaires** puis **Exécuter quand même** (l'application n'est pas encore signée numériquement).
+
+            Déjà installé ? Utilisez simplement le bouton « Mettre à jour » de l'application.
 
             Vos replays sont détectés et analysés automatiquement. Lancez Heroes of the Storm en **plein écran fenêtré** pour voir l'overlay.

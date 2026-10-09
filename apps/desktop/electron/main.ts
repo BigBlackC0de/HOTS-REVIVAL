@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/electron/main";
 import path from "node:path";
 import { backendLogPath, ensureBackend, stopBackend } from "./backend";
 import { onMetaProgress, refreshMeta, scheduleMetaRefresh } from "./meta";
+import { checkForUpdates, downloadUpdate, getUpdateStatus, initUpdater, installUpdate } from "./updater";
 import { createOverlay, setInteractive, toggleOverlay } from "./overlay";
 import { registerShortcuts, SHORTCUTS, unregisterShortcuts } from "./shortcuts";
 
@@ -65,6 +66,11 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle("shortcuts:list", () =>
       Object.fromEntries(Object.entries(SHORTCUTS).map(([k, v]) => [k, v.label])),
     );
+    ipcMain.handle("app:version", () => app.getVersion());
+    ipcMain.handle("updater:status", () => getUpdateStatus());
+    ipcMain.handle("updater:check", () => checkForUpdates());
+    ipcMain.handle("updater:download", () => downloadUpdate());
+    ipcMain.handle("updater:install", () => installUpdate());
     ipcMain.handle("meta:refresh", (_e, force: boolean) => refreshMeta(Boolean(force)));
     ipcMain.handle("app:open-path", (_e, target: "logs" | "data") =>
       shell.openPath(target === "logs" ? backendLogPath() : app.getPath("userData")),
@@ -84,6 +90,11 @@ if (!app.requestSingleInstanceLock()) {
     registerShortcuts();
     onMetaProgress((p) => mainWindow?.webContents.send("meta:progress", p));
     scheduleMetaRefresh();
+    if (mainWindow) initUpdater(mainWindow);
+  });
+
+  app.on("before-quit", () => {
+    stopBackend(); // libère l'exécutable du moteur avant une mise à jour
   });
 
   app.on("will-quit", () => {
