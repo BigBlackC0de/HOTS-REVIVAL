@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.analytics.profile_stats import build_profile, progression
+from app.coach.roles import role_balance
 from app.config import Settings, app_settings
 from app.db import get_db
 from app.models import Player
@@ -24,7 +25,8 @@ def get_profile(db: Session = Depends(get_db), settings: Settings = Depends(app_
             "toon_handle": settings.resolved_toon_handle(),
             "rank": me.rank if me else None,
         },
-        **asdict(build_profile(db)),
+        **(summary := asdict(build_profile(db))),
+        "role_balance": role_balance(summary["by_role"]),
     }
 
 

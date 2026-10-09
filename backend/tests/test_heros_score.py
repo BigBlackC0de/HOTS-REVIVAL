@@ -23,3 +23,13 @@ def test_score_range_and_survival_penalty():
     res_good = compute_heros_score(good, team, m.duration_s, draft_score=60)
     assert res_good.survival > res.survival
     assert "deaths_per_10min" in res.details["survival"]
+
+
+def test_role_balance_suggests_second_role():
+    from app.coach.roles import role_balance, role_context
+
+    by_role = {"Healer": {"games": 18}, "Tank": {"games": 2}}
+    out = role_balance(by_role)
+    assert out["main_role"] == "Healer" and "second rôle" in out["advice"]
+    assert role_balance({"Healer": {"games": 5}, "Tank": {"games": 5}})["advice"] is None
+    assert "normale" in role_context("Healer")["normal"]

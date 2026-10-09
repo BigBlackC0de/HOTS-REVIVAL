@@ -95,6 +95,7 @@ export interface GameSummary {
   major_mistakes: string[];
   excellent_actions: string[];
   improvement_plan: string[];
+  role_advice?: string[];
 }
 
 export interface ReportFacts {
@@ -112,6 +113,7 @@ export interface ReportFacts {
   weaknesses: string[];
   improvement_plan: string[];
   heros_score: (Omit<HerosScore, "algo_version" | "details">) | null;
+  role_context?: { role: string; label: string; focus: string[]; normal: string };
 }
 
 export interface Report {
@@ -141,6 +143,7 @@ export interface Profile {
   heroes_to_avoid: string[];
   trend: { last_10_winrate: number | null; previous_10_winrate: number | null; direction: "up" | "down" | "stable" | "unknown" };
   category_averages: Record<string, number>;
+  role_balance?: { shares: Record<string, number>; main_role: string | null; advice: string | null };
 }
 
 export interface ProgressionPoint {

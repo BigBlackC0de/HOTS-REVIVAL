@@ -133,6 +133,14 @@ export function MatchReport() {
         </Card>
       </div>
 
+      {facts?.role_context && (
+        <Card title={`Conseils pour votre rôle : ${facts.role_context.label}`}>
+          <p className="mb-3 text-xs text-slate-400">{facts.role_context.normal}</p>
+          <List items={ai?.role_advice?.length ? ai.role_advice : []} icon="◆" tone="text-storm-50"
+            empty="Générez l'analyse IA pour des conseils adaptés à votre héros." />
+        </Card>
+      )}
+
       <Card title="Tableau des scores"><Scoreboard players={m.players} /></Card>
 
       {me?.talents.length ? (

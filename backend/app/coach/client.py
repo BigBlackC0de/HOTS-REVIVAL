@@ -10,6 +10,7 @@ from anthropic.types.beta import BetaMessageParam
 from pydantic import BaseModel, Field
 
 from app.coach.prompts import COACH_SYSTEM, SUMMARY_INSTRUCTIONS
+from app.coach.roles import role_context
 from app.config import Settings
 
 log = logging.getLogger(__name__)
@@ -26,6 +27,10 @@ class GameSummary(BaseModel):
     major_mistakes: list[str]
     excellent_actions: list[str]
     improvement_plan: list[str]
+    role_advice: list[str] = Field(
+        default_factory=list,
+        description="2 à 4 conseils propres au rôle et au héros joués (ex. comment mieux soigner avec ce héros)",
+    )
 
 
 class CoachUnavailable(RuntimeError):
@@ -103,4 +108,5 @@ def deterministic_summary(facts: dict) -> GameSummary:
         major_mistakes=[f"Mort à {t}" for t in facts.get("my_death_times", [])[:3]],
         excellent_actions=[],
         improvement_plan=facts.get("improvement_plan", []),
+        role_advice=role_context((facts.get("role_context") or {}).get("role"))["habits"][:3],
     )

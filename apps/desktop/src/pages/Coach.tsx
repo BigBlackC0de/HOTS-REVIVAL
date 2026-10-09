@@ -11,6 +11,8 @@ const QUICK = [
   "Que dois-je améliorer ?",
   "Pourquoi est-ce que je meurs autant ?",
   "Mon positionnement est-il correct ?",
+  "Comment mieux jouer mon rôle avec ce héros ?",
+  "Quel second rôle dois-je développer ?",
 ];
 
 interface Msg { role: "user" | "assistant"; content: string }

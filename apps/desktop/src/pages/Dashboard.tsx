@@ -102,6 +102,13 @@ export function Dashboard() {
         </Card>
       </div>
 
+      {p.role_balance?.advice && (
+        <Card title="Équilibre des rôles" className="border-gold-600/40">
+          <p className="text-sm text-gold-300">{p.role_balance.advice}</p>
+          <p className="mt-2 text-xs text-slate-400">Demandez au coach « Quel second rôle dois-je développer ? » ou consultez la page Méta.</p>
+        </Card>
+      )}
+
       <Card title="Progression du HEROS SCORE">
         {prog.data ? <Sparkline points={prog.data} /> : <Loading />}
       </Card>

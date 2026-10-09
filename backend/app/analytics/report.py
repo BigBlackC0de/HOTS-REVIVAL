@@ -5,6 +5,7 @@ factuel à Claude, qui ne doit rien inventer au-delà.
 """
 from __future__ import annotations
 
+from app.coach.roles import role_context
 from app.models import Match, MatchPlayer
 
 CATEGORY_LABELS = {
@@ -68,6 +69,10 @@ def build_facts(match: Match, me: MatchPlayer) -> dict:
         strengths.append("Participation élevée aux éliminations.")
     if share("hero_damage") >= 0.28 and me.role in ("Ranged Assassin", "Melee Assassin"):
         strengths.append("Bons dégâts sur les héros adverses.")
+    if me.role == "Healer" and share("healing") >= 0.6:
+        strengths.append(f"Vous assurez {round(share('healing') * 100)} % des soins de l'équipe.")
+    if me.role in ("Tank", "Bruiser") and share("damage_taken") >= 0.3:
+        strengths.append(f"Vous encaissez {round(share('damage_taken') * 100)} % des dégâts de l'équipe : bon rôle de ligne de front.")
     if me.deaths <= 2:
         strengths.append("Excellente survie.")
     if share("xp_contribution") >= 0.25:
@@ -76,7 +81,9 @@ def build_facts(match: Match, me: MatchPlayer) -> dict:
         weaknesses.append(f"{me.deaths} morts.")
     if me.time_spent_dead_s >= 90:
         weaknesses.append(f"Temps passé mort : {me.time_spent_dead_s} secondes.")
-    if categories.get("macro", 100) < 45:
+    if me.role == "Healer" and share("healing") < 0.4:
+        weaknesses.append(f"Seulement {round(share('healing') * 100)} % des soins de l'équipe : restez à portée de vos alliés.")
+    if categories.get("macro", 100) < 45 and me.role != "Healer":
         weaknesses.append("Faible contribution macro (XP, siège, camps).")
     if categories:
         for c, v in sorted(categories.items(), key=lambda kv: -kv[1])[:2]:
@@ -104,8 +111,10 @@ def build_facts(match: Match, me: MatchPlayer) -> dict:
     if weakest:
         headline += f" Votre principal axe de progression : {CATEGORY_LABELS[weakest]}."
 
+    role = role_context(me.role)
     return {
         "headline": headline,
+        "role_context": {"role": me.role, "label": role["label"], "focus": role["focus"], "normal": role["normal"]},
         "result": "win" if me.is_winner else "loss",
         "map": match.map_name,
         "duration": fmt_clock(match.duration_s),
@@ -117,6 +126,7 @@ def build_facts(match: Match, me: MatchPlayer) -> dict:
         "shares": {
             "hero_damage": share("hero_damage"), "siege_damage": share("siege_damage"),
             "healing": share("healing"), "xp_contribution": share("xp_contribution"),
+            "damage_taken": share("damage_taken"),
         },
         "merc_camp_captures": me.merc_camp_captures,
         "my_death_times": my_deaths,

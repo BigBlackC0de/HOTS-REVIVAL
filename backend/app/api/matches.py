@@ -77,7 +77,7 @@ async def generate_report(
     summary, model = None, None
     if coach_available(settings):
         try:
-            summary = await generate_game_summary(settings, r.facts, player_context(db))
+            summary = await generate_game_summary(settings, r.facts, player_context(db, match_id))
             model = settings.claude_model
         except CoachUnavailable:
             summary = None
