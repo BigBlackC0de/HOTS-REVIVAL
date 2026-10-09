@@ -134,10 +134,13 @@ export function locateHud(words: OcrWord[], width: number, height: number, band:
   const clockWord = clocks.sort((a, b) => Math.abs(center(a) - cx) - Math.abs(center(b) - cx))[0];
   const cb = clockWord.bbox;
   const ch = cb.y1 - cb.y0, cy = (cb.y0 + cb.y1) / 2;
+  const cw = cb.x1 - cb.x0;
   const levels = words.filter((w) => {
     const t = w.text.trim();
     if (!/^\d{1,2}$/.test(t) || Number(t) < 1 || Number(t) > 30) return false;
-    return Math.abs((w.bbox.y0 + w.bbox.y1) / 2 - cy) <= ch * 3;
+    // les niveaux sont juste sous l'horloge, de part et d'autre de « contre » (jamais sur les portraits)
+    const wy = (w.bbox.y0 + w.bbox.y1) / 2;
+    return wy > cy && wy - cy <= ch * 4 && Math.abs(center(w) - center(clockWord)) <= cw * 2.5;
   });
   const near = (side: "left" | "right") => levels
     .filter((w) => (side === "left" ? w.bbox.x1 <= cb.x0 : w.bbox.x0 >= cb.x1))

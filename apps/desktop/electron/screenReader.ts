@@ -20,7 +20,7 @@ export interface ScreenReaderConfig { enabled: boolean; regions: Regions; region
 export interface ScreenReading { clock: number | null; ally: number | null; enemy: number | null; at: number }
 export type ReaderState = "off" | "idle" | "starting" | "searching" | "partial" | "ok" | "black" | "error";
 
-const CONFIG_VERSION = 3;
+const CONFIG_VERSION = 4;
 const DEBUG = Boolean(process.env.HOTS_SCREEN_DEBUG);
 const INTERVAL_MS = 1000;
 const CLOCK_EVERY_TICKS = 3; // horloge déjà calée : vérification toutes les 3 s suffit
@@ -56,6 +56,7 @@ export function loadConfig(): ScreenReaderConfig {
     config = { ...config, ...saved };
     if (saved.version !== CONFIG_VERSION) {
       // passage à la lecture automatique : activée, seules les zones vraiment placées à la main sont conservées
+      // (v4 : les zones « auto » d'avant pouvaient viser les portraits -> retour aux zones par défaut)
       const manual = saved.regionsSource === "manuel"
         || (!saved.regionsSource && saved.regions && JSON.stringify(saved.regions) !== JSON.stringify(LEGACY_DEFAULT_REGIONS));
       config.enabled = true;
