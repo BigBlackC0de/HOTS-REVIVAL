@@ -88,6 +88,20 @@ if (!app.requestSingleInstanceLock()) {
       Object.fromEntries(Object.entries(SHORTCUTS).map(([k, v]) => [k, v.label])),
     );
     ipcMain.handle("prefs:get", () => loadPrefs());
+    // Mode partie : affiche la fenêtre sur l'écran choisi (ex. second écran) SANS lui donner
+    // le focus — en plein écran exclusif, prendre le focus réduirait le jeu.
+    ipcMain.handle("game:show", () => {
+      const id = loadPrefs().gameDisplayId;
+      const display = screen.getAllDisplays().find((d) => d.id === id);
+      if (!mainWindow || !display) return false;
+      if (mainWindow.isMinimized()) mainWindow.showInactive();
+      const current = screen.getDisplayMatching(mainWindow.getBounds());
+      if (current.id !== display.id) {
+        if (mainWindow.isMaximized()) mainWindow.unmaximize();
+        mainWindow.setBounds(display.workArea);
+      }
+      return true;
+    });
     ipcMain.handle("prefs:set", (_e, next: Partial<OverlayPrefs>) => {
       const p = savePrefs(next);
       placeOverlay();

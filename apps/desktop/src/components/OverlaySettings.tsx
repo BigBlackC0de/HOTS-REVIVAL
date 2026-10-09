@@ -52,6 +52,16 @@ export function OverlaySettings() {
 
       <div className="space-y-2 border-t border-void-700 pt-3">
         <label className="flex items-center gap-3">
+          <span>Écran du mode partie</span>
+          <select value={prefs.gameDisplayId ?? ""} onChange={(e) => void update({ gameDisplayId: e.target.value ? Number(e.target.value) : null })}>
+            <option value="">Ne pas déplacer la fenêtre</option>
+            {displays.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+          </select>
+        </label>
+        <p className="text-xs text-slate-400">
+          Au chargement d'une partie, l'application s'affiche sur cet écran (idéal : votre second écran), sans prendre le focus du jeu.
+        </p>
+        <label className="flex items-center gap-3">
           <input type="checkbox" checked={prefs.overlay} onChange={(e) => void update({ overlay: e.target.checked })} />
           <span>Afficher aussi l'overlay par-dessus le jeu (nécessite le mode « Plein écran fenêtré »)</span>
         </label>

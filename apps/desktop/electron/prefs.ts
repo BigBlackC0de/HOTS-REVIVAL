@@ -11,9 +11,10 @@ export interface OverlayPrefs {
   volume: number;
   overlay: boolean; // fenêtre overlay par-dessus le jeu (désactivée par défaut)
   displayId: number | null; // écran de l'overlay (null = écran principal)
+  gameDisplayId: number | null; // écran où afficher le mode partie (null = ne pas déplacer)
 }
 
-let prefs: OverlayPrefs = { voice: true, tips: true, voiceName: null, rate: 1.05, volume: 1, overlay: false, displayId: null };
+let prefs: OverlayPrefs = { voice: true, tips: true, voiceName: null, rate: 1.05, volume: 1, overlay: false, displayId: null, gameDisplayId: null };
 const file = () => path.join(app.getPath("userData"), "overlay-prefs.json");
 
 export function loadPrefs(): OverlayPrefs {

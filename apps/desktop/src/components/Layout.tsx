@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { LiveContext } from "../hooks/liveContext";
 import { useLive } from "../hooks/useLive";
 import { useVoiceGuide } from "../hooks/useVoiceGuide";
+import { bridge } from "../lib/bridge";
 import { UpdateButton } from "./UpdateButton";
 
 const NAV = [
@@ -37,6 +38,7 @@ export function Layout() {
     if (state && (state.status === "loading" || state.status === "in_game") && shownGame.current !== state.game_id) {
       shownGame.current = state.game_id;
       if (location.pathname !== "/game") navigate("/game");
+      void bridge()?.showGameWindow(); // second écran si configuré
     }
   }, [state, location.pathname, navigate]);
 

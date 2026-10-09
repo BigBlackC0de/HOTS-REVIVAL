@@ -19,6 +19,7 @@ export interface OverlayPrefs {
   volume: number;
   overlay: boolean;
   displayId: number | null;
+  gameDisplayId: number | null;
 }
 
 /** Pont Electron (preload). Absent quand l'UI tourne dans un navigateur (npm run dev:web). */
@@ -37,6 +38,7 @@ export interface HotsBridge {
     displays: () => Promise<{ id: number; label: string }[]>;
     say: (text: string) => Promise<void>;
   };
+  showGameWindow: () => Promise<boolean>;
   onSay: (cb: (text: string) => void) => () => void;
   onPrefs: (cb: (p: OverlayPrefs) => void) => () => void;
   screen: {

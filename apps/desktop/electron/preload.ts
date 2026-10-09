@@ -20,6 +20,7 @@ const api = {
     displays: (): Promise<unknown> => ipcRenderer.invoke("displays:list"),
     say: (text: string): Promise<void> => ipcRenderer.invoke("overlay:say", text),
   },
+  showGameWindow: (): Promise<boolean> => ipcRenderer.invoke("game:show"),
   onSay: (cb: (text: string) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, text: string) => cb(text);
     ipcRenderer.on("overlay:say", listener);

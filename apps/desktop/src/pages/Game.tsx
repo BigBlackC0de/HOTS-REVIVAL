@@ -5,6 +5,7 @@ import { Card, Empty, List } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import { useLiveState } from "../hooks/liveContext";
 import { api } from "../lib/api";
+import { bridge } from "../lib/bridge";
 import { clock, pct } from "../lib/format";
 import type { HeroMeta, LobbyPlayer, OverlayState } from "../lib/types";
 
@@ -115,6 +116,22 @@ function Players({ gameId }: { gameId: number }) {
   );
 }
 
+function VoiceToggle() {
+  const b = bridge();
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    void b?.prefs.get().then((p) => setOn(p.voice));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (!b || on === null) return null;
+  return (
+    <button className="btn-ghost py-1" title="Guide vocal"
+      onClick={() => void b.prefs.set({ voice: !on }).then((p) => setOn(p.voice))}>
+      {on ? "🔊 Voix" : "🔇 Voix coupée"}
+    </button>
+  );
+}
+
 /** Mode partie : s'ouvre tout seul au chargement d'une partie (alternative à l'overlay). */
 export function Game() {
   const { state: s, setState } = useLiveState();
@@ -151,6 +168,7 @@ export function Game() {
         <div className="text-right">
           <div className="font-mono text-6xl text-white">{s.clock_source === "estimée" && "≈"}{s.status === "in_game" ? clock(s.clock_s) : "–:––"}</div>
           <div className="mt-1 flex justify-end gap-2">
+            <VoiceToggle />
             <button className="btn-ghost py-1" onClick={() => act(api.live.sync(0))}>Horloge à 0:00</button>
             <button className="btn-ghost py-1 text-rose-300" onClick={() => act(api.live.stop())}>Fin</button>
           </div>

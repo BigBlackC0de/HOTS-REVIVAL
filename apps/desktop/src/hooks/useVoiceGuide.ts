@@ -4,7 +4,7 @@ import type { OverlayState } from "../lib/types";
 import { speak } from "../lib/voice";
 
 const TIP_COOLDOWN_MS = 90_000;
-const DEFAULT: OverlayPrefs = { voice: true, tips: true, voiceName: null, rate: 1.05, volume: 1, overlay: false, displayId: null };
+const DEFAULT: OverlayPrefs = { voice: true, tips: true, voiceName: null, rate: 1.05, volume: 1, overlay: false, displayId: null, gameDisplayId: null };
 
 /**
  * Guide vocal : lit chaque alerte quand elle apparaît, et les conseils (« Restez groupés »…)
