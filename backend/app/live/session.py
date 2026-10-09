@@ -74,12 +74,12 @@ class LiveSession:
         self.game_running, self.game_id = running, game_id
 
     def on_lobby(self, battletags: list[str], map_id: str | None, map_source: str | None,
-                 map_hash: str | None, timings: dict | None = None) -> None:
+                 map_hash: str | None, timings: dict | None = None, age_s: float = 0.0) -> None:
         """Nouveau fichier de chargement = nouvelle partie : on repart de zéro."""
         with self._lock:
             self._new_game_locked()
             self.status = "loading"
-            self.loading_since = time.monotonic()
+            self.loading_since = time.monotonic() - age_s
             self.lobby_players, self.lobby_map_hash = battletags, map_hash
             self.map_id, self.map_source = map_id, map_source
             self.timings = timings or {}

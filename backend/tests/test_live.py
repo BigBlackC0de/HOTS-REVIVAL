@@ -132,3 +132,29 @@ def test_lobby_poller_detects_new_file_even_if_folder_recreated(tmp_path):
     shutil.copy(FIXTURES / "storm_league.battlelobby", folder / "replay.server.battlelobby")
     w.poll()
     assert w.poll() is not None and len(seen) == 2
+
+
+def test_game_already_in_progress_is_resumed(tmp_path):
+    import os
+    import shutil
+
+    from app.live.battlelobby import LobbyWatcher
+
+    folder = tmp_path / "Heroes of the Storm" / "TempWriteReplayP1"
+    folder.mkdir(parents=True)
+    lobby = folder / "replay.server.battlelobby"
+    shutil.copy(FIXTURES / "storm_league.battlelobby", lobby)
+    old = time.time() - 300  # partie lancée il y a 5 minutes
+    os.utime(lobby, (old, old))
+    w = LobbyWatcher(tmp_path / "Heroes of the Storm", lambda info: None)
+    w.prime()
+    assert w.poll() is None  # le démarrage normal l'ignore…
+    info = w.in_progress()
+    assert info and 290 <= info.age_s <= 320  # …mais la reprise la retrouve
+    assert w.in_progress(ended_after=time.time()) is None  # un replay plus récent = partie finie
+
+    s = LiveSession()
+    s.on_lobby(info.battletags, "hanamura_temple", "appris", info.map_hash, None, info.age_s)
+    snap = s.snapshot()
+    assert snap["status"] == "in_game" and snap["clock_source"] == "estimée"
+    assert 230 <= snap["clock_s"] <= 250  # 300 s depuis le chargement - 65 s

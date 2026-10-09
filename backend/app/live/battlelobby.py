@@ -42,6 +42,7 @@ class LobbyInfo:
     map_cache_path: str | None = None
     map_id: str | None = None
     map_source: str | None = None  # "appris" | "cache Battle.net"
+    age_s: float = 0.0  # ancienneté du fichier (partie déjà en cours au démarrage)
 
 
 def extract_battletags(data: bytes) -> list[str]:
@@ -181,6 +182,30 @@ class LobbyWatcher:
                 self._seen.add((str(p), p.stat().st_mtime))
             except OSError:
                 pass
+
+    def in_progress(self, max_age_s: float = 2700, ended_after: float | None = None) -> LobbyInfo | None:
+        """Partie déjà en cours (application lancée ou mise à jour en pleine partie) :
+        fichier de chargement récent et aucun replay enregistré depuis."""
+        import time
+
+        files = []
+        for p in find_lobby_files(self.temp_dir):
+            try:
+                files.append((p.stat().st_mtime, p))
+            except OSError:
+                pass
+        if not files:
+            return None
+        mtime, path = max(files)
+        age = time.time() - mtime
+        if age > max_age_s or (ended_after is not None and ended_after >= mtime):
+            return None
+        info = read_lobby_file(path)
+        if not (info.battletags or info.map_hash):
+            return None
+        self._seen.add((str(path), mtime))
+        info.age_s = max(0.0, age)
+        return info
 
     def poll(self) -> LobbyInfo | None:
         for p in find_lobby_files(self.temp_dir):

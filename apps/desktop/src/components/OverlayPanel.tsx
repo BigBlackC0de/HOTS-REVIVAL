@@ -51,7 +51,7 @@ export function OverlayPanel({ state, interactive, heroes, maps, onState, previe
     // Jeu ouvert, pas de partie : petite pastille pour confirmer que l'overlay est actif.
     return s?.game_running ? (
       <div className="inline-flex items-center gap-2 rounded-full border border-nexus-600/60 bg-void-950/80 px-3 py-1 text-[11px] text-slate-300">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> HOTS REVIVAL prêt
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> HOTS REVIVAL prêt · s'affiche au chargement d'une partie
       </div>
     ) : null;
   }

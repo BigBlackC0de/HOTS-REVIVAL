@@ -46,12 +46,38 @@ def _on_lobby(info: LobbyInfo) -> None:
     if info.map_id:
         with SessionLocal() as db:
             timings = map_timings(db, info.map_id)
-    live_session.on_lobby(info.battletags, info.map_id, info.map_source, info.map_hash, timings)
+    live_session.on_lobby(info.battletags, info.map_id, info.map_source, info.map_hash, timings, info.age_s)
     hub.publish_threadsafe({"type": "game_loading", "players": info.battletags, "map_id": info.map_id})
+
+
+_lobby_watcher: LobbyWatcher | None = None
+_replay_dirs: list[Path] = []
+
+
+def _latest_replay_mtime() -> float | None:
+    latest = None
+    for folder in _replay_dirs:
+        for f in folder.glob("*.StormReplay"):
+            try:
+                mtime = f.stat().st_mtime
+            except OSError:
+                continue
+            latest = mtime if latest is None or mtime > latest else latest
+    return latest
+
+
+def _resume_in_progress() -> None:
+    """Jeu détecté alors qu'aucune partie n'est suivie : reprendre une partie déjà en cours."""
+    if _lobby_watcher and live_session.status == "idle":
+        info = _lobby_watcher.in_progress(ended_after=_latest_replay_mtime())
+        if info:
+            _on_lobby(info)
 
 
 def _on_process(running: bool) -> None:
     live_session.on_process(running)
+    if running:
+        _resume_in_progress()
     hub.publish_threadsafe({"type": "game_process", "running": running})
 
 
@@ -84,17 +110,19 @@ def create_app(settings: Settings | None = None, start_watchers: bool = True) ->
         create_schema()
         hub.bind_loop(asyncio.get_running_loop())
         app.state.start_watchers = start_watchers
+        global _lobby_watcher, _replay_dirs
         app.state.lobby_watcher = app.state.process_monitor = None
+        _replay_dirs = settings.resolved_replay_dirs()
         start_replay_watching(app, start_watchers)
-        if start_watchers:
-            app.state.process_monitor = GameProcessMonitor(_on_process)
-            app.state.process_monitor.start()
         if start_watchers and settings.watch_live:
             try:
-                app.state.lobby_watcher = LobbyWatcher(settings.resolved_live_dir(), _on_lobby)
+                _lobby_watcher = app.state.lobby_watcher = LobbyWatcher(settings.resolved_live_dir(), _on_lobby)
                 app.state.lobby_watcher.start()
             except OSError:
                 log.warning("Détection de partie indisponible", exc_info=True)
+        if start_watchers:  # après la détection de chargement : permet de reprendre une partie en cours
+            app.state.process_monitor = GameProcessMonitor(_on_process)
+            app.state.process_monitor.start()
         yield
         stop_replay_watching(app)
         if app.state.lobby_watcher:
