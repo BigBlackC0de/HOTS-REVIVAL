@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,7 +27,7 @@ class ImportResult:
     error: str | None = None
 
 
-def import_replay_file(db: Session, path: Path, me_toon: str | None) -> ImportResult:
+def import_replay_file(db: Session, path: Path, me_toons: Collection[str] | str | None) -> ImportResult:
     digest = file_sha256(path)
     existing = db.scalar(select(Replay).where(Replay.file_hash == digest))
     if existing:
@@ -44,7 +45,7 @@ def import_replay_file(db: Session, path: Path, me_toon: str | None) -> ImportRe
         db.commit()
         return ImportResult("failed", replay.id, error=replay.error)
 
-    match = persist_match(db, replay, parsed, me_toon)
+    match = persist_match(db, replay, parsed, me_toons)
     replay.status = "parsed"
     db.commit()
     return ImportResult("imported", replay.id, match.id)
@@ -65,7 +66,10 @@ def _upsert_player(db: Session, toon: str | None, name: str, is_me: bool) -> Pla
     return player
 
 
-def persist_match(db: Session, replay: Replay, parsed: ParsedMatch, me_toon: str | None) -> Match:
+def persist_match(db: Session, replay: Replay, parsed: ParsedMatch, me_toons: Collection[str] | str | None) -> Match:
+    if isinstance(me_toons, str):
+        me_toons = {me_toons}
+    me_set = set(me_toons or ())
     match = Match(
         replay_id=replay.id,
         map_id=parsed.map_id,
@@ -82,7 +86,7 @@ def persist_match(db: Session, replay: Replay, parsed: ParsedMatch, me_toon: str
 
     rows: list[MatchPlayer] = []
     for p in parsed.players:
-        is_me = bool(me_toon and p.toon_handle == me_toon)
+        is_me = bool(p.toon_handle and p.toon_handle in me_set)
         player = _upsert_player(db, p.toon_handle, p.name, is_me)
         mp = MatchPlayer(
             match_id=match.id, player_id=player.id if player else None, slot=p.slot, team=p.team,

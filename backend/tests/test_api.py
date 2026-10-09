@@ -77,3 +77,25 @@ def test_settings_roundtrip(client, tmp_path):
     assert body["player_battletag"] == "Azsra#2154" and body["has_api_key"] is True
     assert "sk-test" not in r.text  # la clé n'est jamais renvoyée
     assert client.get("/api/coach/status").json()["available"] is True
+
+
+def test_rank_history(client):
+    assert client.post("/api/profile/ranks", json={"league": "Inconnue"}).status_code == 400
+    assert client.post("/api/profile/ranks", json={"league": "Platine", "division": 3}).json()["label"] == "Platine 3"
+    client.post("/api/profile/ranks", json={"league": "Diamant", "division": 5})
+    hist = client.get("/api/profile/ranks").json()["history"]
+    assert [h["label"] for h in hist] == ["Diamant 5", "Platine 3"]
+    assert client.get("/api/profile").json()["player"]["rank"] == "Diamant 5"
+
+
+def test_all_region_folders_are_imported(tmp_path):
+    from app.config import Settings
+
+    accounts = tmp_path / "Accounts" / "137044993"
+    eu = accounts / "2-Hero-1-1278570" / "Replays" / "Multiplayer"
+    us = accounts / "1-Hero-1-555" / "Replays" / "Multiplayer"
+    eu.mkdir(parents=True)
+    us.mkdir(parents=True)
+    s = Settings(replay_dir=str(eu), anthropic_api_key="")
+    assert set(s.resolved_replay_dirs()) == {eu, us}
+    assert set(s.resolved_toon_handles()) == {"2-Hero-1-1278570", "1-Hero-1-555"}

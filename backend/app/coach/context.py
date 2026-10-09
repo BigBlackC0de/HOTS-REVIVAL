@@ -31,6 +31,11 @@ def player_context(db: Session, match_id: int | None = None) -> str:
         "heros_les_plus_joues": top_heroes,
         "dernieres_parties": recent,
     }
+    from app.api.profile import current_rank
+
+    rank = current_rank(db)
+    if rank:
+        ctx["rang_declare"] = rank["label"]
     balance = role_balance(profile["by_role"])
     ctx["repartition_des_roles"] = balance
     tiers = all_tiers(db, "general")

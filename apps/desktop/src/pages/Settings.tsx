@@ -3,6 +3,7 @@ import { Card, ErrorBox, List, Loading } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import { api } from "../lib/api";
 import { bridge } from "../lib/bridge";
+import { RankCard } from "../components/RankCard";
 import { ScreenCalibration } from "../components/ScreenCalibration";
 import { UpdateButton } from "../components/UpdateButton";
 
@@ -96,9 +97,16 @@ export function Settings() {
         </Card>
       </form>
 
+      <RankCard />
+
       <Card title="Replays">
         <div className="space-y-2 text-sm">
           <div>Import automatique : {status.data?.watching ? "✔ actif — chaque partie terminée est analysée" : "inactif (dossier introuvable)"}</div>
+          {(status.data?.folders?.length ?? 0) > 1 && (
+            <div className="text-xs text-slate-400">
+              {status.data!.folders!.length} dossiers surveillés (toutes vos régions) : {status.data!.toon_handles?.join(", ")}
+            </div>
+          )}
           <div>Parties analysées : {counts.parsed ?? 0}{counts.failed ? ` · ${counts.failed} replay(s) illisible(s)` : ""}</div>
           <div className="flex gap-2 pt-1">
             <button className="btn-gold" onClick={runImport} disabled={importing}>{importing ? "Import en cours…" : "Importer mes anciens replays"}</button>

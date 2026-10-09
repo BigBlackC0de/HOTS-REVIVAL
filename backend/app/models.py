@@ -226,3 +226,15 @@ class MetaHeroGuide(Base):
     counters: Mapped[list] = mapped_column(JSONType, default=list)
     builds: Mapped[list] = mapped_column(JSONType, default=list)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RankSnapshot(Base):
+    """Rang déclaré par le joueur (Blizzard n'expose aucune API de rang pour HotS)."""
+
+    __tablename__ = "rank_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mode: Mapped[str] = mapped_column(String(32), default="Storm League")
+    league: Mapped[str] = mapped_column(String(24))
+    division: Mapped[int | None] = mapped_column(Integer)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

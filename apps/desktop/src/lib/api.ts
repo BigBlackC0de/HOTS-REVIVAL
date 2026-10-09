@@ -1,5 +1,6 @@
 import { bridge } from "./bridge";
 import type {
+  RankEntry,
   AppSettings, Combo, Compliance, HeroMeta, TierListData, DraftResult, Hero, MapInfo, MatchDetail, MatchSummary, OverlayState, Profile,
   ProgressionPoint, Report, ReplayStatus,
 } from "./types";
@@ -54,6 +55,8 @@ export const api = {
   combos: () => request<Combo[]>("/meta/combos"),
   heroMeta: (heroId: string) => request<HeroMeta>(`/meta/heroes/${heroId}`),
   refreshMetaDirect: (force = false) => post<{ updated: number; errors: unknown[] }>(`/meta/refresh?force=${force}`),
+  ranks: () => request<{ leagues: string[]; history: RankEntry[] }>("/profile/ranks"),
+  addRank: (league: string, division: number | null) => post<RankEntry>("/profile/ranks", { league, division }),
   coachStatus: () => request<{ available: boolean; model: string }>("/coach/status"),
   live: {
     state: () => request<OverlayState>("/live/state"),

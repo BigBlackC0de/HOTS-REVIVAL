@@ -59,9 +59,9 @@ def start_replay_watching(app: FastAPI, start_watcher: bool = True) -> None:
     """(Re)démarre l'import automatique selon les réglages courants."""
     stop_replay_watching(app)
     settings: Settings = app.state.settings
-    folder = settings.resolved_replay_dir()
-    if folder:
-        app.state.replay_importer = ReplayImporter(folder, settings.resolved_toon_handle(), _on_import)
+    folders = settings.resolved_replay_dirs()
+    if folders:
+        app.state.replay_importer = ReplayImporter(folders, settings.resolved_toon_handles(), _on_import)
         if start_watcher and settings.watch_replays:
             app.state.replay_watcher = ReplayWatcher(app.state.replay_importer)
             app.state.replay_watcher.start()

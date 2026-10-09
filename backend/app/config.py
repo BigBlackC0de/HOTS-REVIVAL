@@ -86,20 +86,33 @@ class Settings(BaseSettings):
     def resolved_database_url(self) -> str:
         return self.database_url or f"sqlite:///{(data_dir() / 'hots.db').as_posix()}"
 
-    def resolved_replay_dir(self) -> Path | None:
+    def resolved_replay_dirs(self) -> list[Path]:
+        """Tous les dossiers de replays du joueur (chaque région / compte présent sur le PC)."""
         if self.replay_dir:
-            return Path(self.replay_dir)
-        return discover_replay_dir()
+            chosen = Path(self.replay_dir)
+            dirs = [chosen]
+            # dossier standard : on ajoute les autres régions du même dossier Accounts
+            if TOON_HANDLE_RE.search(str(chosen)) and len(chosen.parents) >= 4:
+                accounts = chosen.parents[3]
+                dirs += [d for d in _multiplayer_dirs(accounts) if d != chosen]
+            return dirs
+        return discover_replay_dirs()
+
+    def resolved_replay_dir(self) -> Path | None:
+        dirs = self.resolved_replay_dirs()
+        return dirs[0] if dirs else None
+
+    def resolved_toon_handles(self) -> list[str]:
+        handles = [h.strip() for h in self.player_toon_handle.split(",") if h.strip()]
+        for d in self.resolved_replay_dirs():
+            match = TOON_HANDLE_RE.search(str(d))
+            if match and match.group(0) not in handles:
+                handles.append(match.group(0))
+        return handles
 
     def resolved_toon_handle(self) -> str | None:
-        if self.player_toon_handle:
-            return self.player_toon_handle
-        replay_dir = self.resolved_replay_dir()
-        if replay_dir:
-            match = TOON_HANDLE_RE.search(str(replay_dir))
-            if match:
-                return match.group(0)
-        return None
+        handles = self.resolved_toon_handles()
+        return handles[0] if handles else None
 
     def resolved_live_dir(self) -> Path:
         if self.live_temp_dir:
@@ -108,20 +121,25 @@ class Settings(BaseSettings):
         return Path(temp) / "Heroes of the Storm"
 
 
-def discover_replay_dir() -> Path | None:
-    """Cherche Documents/Heroes of the Storm/Accounts/<id>/<toon>/Replays/Multiplayer."""
+def _multiplayer_dirs(accounts: Path) -> list[Path]:
+    if not accounts.is_dir():
+        return []
+    return sorted(accounts.glob("*/*-Hero-*/Replays/Multiplayer"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def discover_replay_dirs() -> list[Path]:
+    """Documents/Heroes of the Storm/Accounts/<id>/<toon>/Replays/Multiplayer (toutes régions)."""
     homes = [Path.home() / "Documents", Path.home() / "OneDrive" / "Documents"]
     for docs in homes:
-        accounts = docs / "Heroes of the Storm" / "Accounts"
-        if accounts.is_dir():
-            candidates = sorted(
-                accounts.glob("*/*-Hero-*/Replays/Multiplayer"),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )
-            if candidates:
-                return candidates[0]
-    return None
+        dirs = _multiplayer_dirs(docs / "Heroes of the Storm" / "Accounts")
+        if dirs:
+            return dirs
+    return []
+
+
+def discover_replay_dir() -> Path | None:
+    dirs = discover_replay_dirs()
+    return dirs[0] if dirs else None
 
 
 def read_user_settings() -> dict[str, Any]:

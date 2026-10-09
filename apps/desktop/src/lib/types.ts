@@ -206,8 +206,12 @@ export interface OverlayState {
   tips: string[];
 }
 
+export interface RankEntry { id: number; mode: string; league: string; division: number | null; label: string; recorded_at: string }
+
 export interface ReplayStatus {
   folder: string | null;
+  folders?: string[];
+  toon_handles?: string[];
   folder_exists: boolean;
   watching: boolean;
   toon_handle: string | null;

@@ -60,7 +60,7 @@ def update(body: SettingsUpdate, request: Request) -> SettingsOut:
     old: Settings = request.app.state.settings
     new = old.model_copy(update=values)
     request.app.state.settings = new
-    if new.resolved_replay_dir() != old.resolved_replay_dir() or new.resolved_toon_handle() != old.resolved_toon_handle():
+    if new.resolved_replay_dirs() != old.resolved_replay_dirs() or new.resolved_toon_handles() != old.resolved_toon_handles():
         from app.main import start_replay_watching
 
         start_replay_watching(request.app, getattr(request.app.state, "start_watchers", True))

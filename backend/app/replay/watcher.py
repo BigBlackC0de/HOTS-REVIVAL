@@ -34,25 +34,28 @@ def wait_until_stable(path: Path, interval: float = 1.0, checks: int = 3, timeou
 
 
 class ReplayImporter:
-    def __init__(self, folder: Path, me_toon: str | None,
+    def __init__(self, folders: Path | list[Path], me_toons: list[str] | str | None,
                  on_result: Callable[[Path, ImportResult], None] | None = None) -> None:
-        self.folder = folder
-        self.me_toon = me_toon
+        self.folders = folders if isinstance(folders, list) else [folders]
+        self.me_toons = [me_toons] if isinstance(me_toons, str) else list(me_toons or [])
         self.on_result = on_result
         self._lock = threading.Lock()
 
+    @property
+    def folder(self) -> Path:
+        return self.folders[0]
+
     def import_path(self, path: Path) -> ImportResult:
         with self._lock, SessionLocal() as db:
-            result = import_replay_file(db, path, self.me_toon)
+            result = import_replay_file(db, path, self.me_toons)
         log.info("Replay %s : %s", path.name, result.status)
         if self.on_result:
             self.on_result(path, result)
         return result
 
     def scan(self) -> list[ImportResult]:
-        if not self.folder.is_dir():
-            return []
-        files = sorted(self.folder.glob(f"*{REPLAY_SUFFIX}"), key=lambda p: p.stat().st_mtime)
+        files = [f for d in self.folders if d.is_dir() for f in d.glob(f"*{REPLAY_SUFFIX}")]
+        files.sort(key=lambda p: p.stat().st_mtime)
         return [self.import_path(p) for p in files]
 
 
@@ -86,14 +89,16 @@ class ReplayWatcher:
         self._observer: Observer | None = None
 
     def start(self) -> None:
-        if not self.importer.folder.is_dir():
-            log.warning("Dossier de replays introuvable : %s", self.importer.folder)
+        folders = [d for d in self.importer.folders if d.is_dir()]
+        if not folders:
+            log.warning("Dossier de replays introuvable : %s", self.importer.folders)
             return
         threading.Thread(target=self.importer.scan, daemon=True).start()  # rattrapage initial
         self._observer = Observer()
-        self._observer.schedule(_Handler(self.importer), str(self.importer.folder), recursive=False)
+        for folder in folders:
+            self._observer.schedule(_Handler(self.importer), str(folder), recursive=False)
+            log.info("Surveillance des replays : %s", folder)
         self._observer.start()
-        log.info("Surveillance des replays : %s", self.importer.folder)
 
     def stop(self) -> None:
         if self._observer:
