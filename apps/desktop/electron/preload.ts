@@ -14,6 +14,12 @@ const api = {
     ipcRenderer.on("meta:progress", listener);
     return () => ipcRenderer.removeListener("meta:progress", listener);
   },
+  screen: {
+    status: (): Promise<unknown> => ipcRenderer.invoke("screen:status"),
+    save: (cfg: unknown): Promise<unknown> => ipcRenderer.invoke("screen:save", cfg),
+    capture: (fresh: boolean): Promise<unknown> => ipcRenderer.invoke("screen:capture", fresh),
+    test: (regions: unknown): Promise<unknown> => ipcRenderer.invoke("screen:test", regions),
+  },
   version: (): Promise<string> => ipcRenderer.invoke("app:version"),
   updater: {
     status: (): Promise<UpdateStatus> => ipcRenderer.invoke("updater:status"),

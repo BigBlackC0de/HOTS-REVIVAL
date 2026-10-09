@@ -19,7 +19,8 @@
     "posthog-js": "1.194.6",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "react-router-dom": "6.28.0"
+    "react-router-dom": "6.28.0",
+    "tesseract.js": "5.1.1"
   },
   "devDependencies": {
     "@types/node": "22.10.1",
@@ -57,6 +58,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "resources/tessdata",
+        "to": "tessdata"
       }
     ],
     "win": {
@@ -86,6 +91,22 @@
         "repo": "HOTS-REVIVAL",
         "releaseType": "prerelease"
       }
+    ],
+    "asarUnpack": [
+      "node_modules/tesseract.js/**",
+      "node_modules/tesseract.js-core/**",
+      "node_modules/bmp-js/**",
+      "node_modules/idb-keyval/**",
+      "node_modules/is-electron/**",
+      "node_modules/is-url/**",
+      "node_modules/node-fetch/**",
+      "node_modules/opencollective-postinstall/**",
+      "node_modules/regenerator-runtime/**",
+      "node_modules/wasm-feature-detect/**",
+      "node_modules/zlibjs/**",
+      "node_modules/whatwg-url/**",
+      "node_modules/tr46/**",
+      "node_modules/webidl-conversions/**"
     ]
   }
 }

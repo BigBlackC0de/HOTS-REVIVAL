@@ -3,6 +3,7 @@ import { Card, ErrorBox, List, Loading } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import { api } from "../lib/api";
 import { bridge } from "../lib/bridge";
+import { ScreenCalibration } from "../components/ScreenCalibration";
 import { UpdateButton } from "../components/UpdateButton";
 
 export function Settings() {
@@ -106,6 +107,12 @@ export function Settings() {
           {importResult && <div className="text-gold-300">{importResult}</div>}
         </div>
       </Card>
+
+      {bridge() && (
+        <Card title="Overlay : lecture de l'écran (horloge et niveaux)">
+          <ScreenCalibration />
+        </Card>
+      )}
 
       {bridge() && (
         <Card title="Application">

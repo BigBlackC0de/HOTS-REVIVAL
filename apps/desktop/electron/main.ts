@@ -3,6 +3,10 @@ import * as Sentry from "@sentry/electron/main";
 import path from "node:path";
 import { backendLogPath, ensureBackend, stopBackend } from "./backend";
 import { onMetaProgress, refreshMeta, scheduleMetaRefresh } from "./meta";
+import {
+  calibrationCapture, saveConfig, screenReaderStatus, startScreenReader, stopScreenReader, testRegions,
+} from "./screenReader";
+import type { Regions } from "./ocr";
 import { checkForUpdates, downloadUpdate, getUpdateStatus, initUpdater, installUpdate } from "./updater";
 import { createOverlay, setInteractive, toggleOverlay } from "./overlay";
 import { registerShortcuts, SHORTCUTS, unregisterShortcuts } from "./shortcuts";
@@ -58,6 +62,20 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
+    if (process.env.HOTS_OCR_SELFTEST) {
+      // Auto-test de l'OCR empaqueté : lit une image entière comme horloge.
+      const { nativeImage } = await import("electron");
+      const { readImage } = await import("./screenReader");
+      const full = { x: 0, y: 0, w: 1, h: 1 };
+      try {
+        const r = await readImage(nativeImage.createFromPath(process.env.HOTS_OCR_SELFTEST), { clock: full, ally: full, enemy: full });
+        console.log("OCR_SELFTEST", JSON.stringify(r));
+      } catch (err) {
+        console.log("OCR_SELFTEST_ERROR", err);
+      }
+      app.exit(0);
+      return;
+    }
     mainWindow = createMainWindow();
     mainWindow.on("closed", () => app.quit());
 
@@ -66,6 +84,10 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle("shortcuts:list", () =>
       Object.fromEntries(Object.entries(SHORTCUTS).map(([k, v]) => [k, v.label])),
     );
+    ipcMain.handle("screen:status", () => screenReaderStatus());
+    ipcMain.handle("screen:save", (_e, cfg: { enabled?: boolean; regions?: Regions }) => saveConfig(cfg));
+    ipcMain.handle("screen:capture", (_e, fresh: boolean) => calibrationCapture(fresh !== false));
+    ipcMain.handle("screen:test", (_e, regions: Regions) => testRegions(regions));
     ipcMain.handle("app:version", () => app.getVersion());
     ipcMain.handle("updater:status", () => getUpdateStatus());
     ipcMain.handle("updater:check", () => checkForUpdates());
@@ -91,6 +113,7 @@ if (!app.requestSingleInstanceLock()) {
     onMetaProgress((p) => mainWindow?.webContents.send("meta:progress", p));
     scheduleMetaRefresh();
     if (mainWindow) initUpdater(mainWindow);
+    startScreenReader();
   });
 
   app.on("before-quit", () => {
@@ -98,6 +121,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("will-quit", () => {
+    stopScreenReader();
     unregisterShortcuts();
     stopBackend();
   });

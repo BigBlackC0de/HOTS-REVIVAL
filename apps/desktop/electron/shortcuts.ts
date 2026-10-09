@@ -5,6 +5,7 @@
 import { globalShortcut } from "electron";
 import { BACKEND_URL } from "./backend";
 import { toggleInteractive, toggleOverlay } from "./overlay";
+import { rememberCapture } from "./screenReader";
 
 async function post(path: string, body: unknown = {}): Promise<void> {
   try {
@@ -25,6 +26,7 @@ export const SHORTCUTS: Record<string, { label: string; run: () => void }> = {
   "CommandOrControl+Shift+PageUp": { label: "Niveau allié +1", run: () => post("levels", { ally_delta: 1 }) },
   "CommandOrControl+Shift+PageDown": { label: "Niveau adverse +1", run: () => post("levels", { enemy_delta: 1 }) },
   "CommandOrControl+Shift+J": { label: "Objectif terminé", run: () => post("objective-done") },
+  "CommandOrControl+Shift+K": { label: "Capturer l'écran pour calibrer la lecture", run: () => void rememberCapture() },
 };
 
 export function registerShortcuts(): void {
