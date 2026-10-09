@@ -10,6 +10,7 @@ from app.db import get_db
 from app.events import hub
 from app.live.session import live_session
 from app.analytics.timings import map_timings
+from app.meta.service import hero_guide
 from app.schemas import LiveCampRequest, LiveHeroRequest, LiveLevelsRequest, LiveStartRequest, LiveSyncRequest
 
 router = APIRouter(prefix="/live", tags=["overlay"])
@@ -17,11 +18,25 @@ ws_router = APIRouter()
 
 
 def recommended_build(db: Session, hero_id: str) -> list[dict]:
+    """Build Icy Veins (premier build du guide) enrichi des stats des replays importés ;
+    à défaut, talents les plus gagnants dans les replays importés."""
+    stats = {t["level"]: {o["talent"]: o for o in t["options"]} for t in talent_stats(db, hero_id)}
+    guide = hero_guide(db, hero_id)
+    if guide and guide["builds"]:
+        build = []
+        for t in guide["builds"][0]["talents"]:
+            local = stats.get(t["level"], {}).get(t["talent"] or "", {})
+            build.append({"level": t["level"], "source": "Icy Veins",
+                          "recommended": {"talent": t["talent"], "name": t["name"],
+                                          "winrate": local.get("winrate"), "popularity": local.get("popularity")},
+                          "alternatives": []})
+        return build
     build = []
     for tier in talent_stats(db, hero_id):
         options = tier["options"]
         if options:
-            build.append({"level": tier["level"], "recommended": options[0], "alternatives": options[1:3]})
+            build.append({"level": tier["level"], "source": "vos replays",
+                          "recommended": options[0], "alternatives": options[1:3]})
     return build
 
 

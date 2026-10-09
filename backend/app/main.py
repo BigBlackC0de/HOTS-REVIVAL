@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.analytics.timings import map_timings
-from app.api import coach, draft, live, matches, profile, reference, replays, settings as settings_api
+from app.api import coach, draft, live, matches, meta, profile, reference, replays, settings as settings_api
 from app.config import Settings, get_settings
 from app.db import SessionLocal, create_schema, init_engine
 from app.events import hub
@@ -112,7 +112,7 @@ def create_app(settings: Settings | None = None, start_watchers: bool = True) ->
         allow_headers=["*"],
     )
     for router in (reference.router, profile.router, matches.router, replays.router,
-                   draft.router, coach.router, live.router, settings_api.router):
+                   draft.router, coach.router, live.router, settings_api.router, meta.router):
         app.include_router(router, prefix="/api")
     app.include_router(live.ws_router)
     return app

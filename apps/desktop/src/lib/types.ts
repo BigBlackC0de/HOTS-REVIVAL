@@ -57,7 +57,7 @@ export interface MatchPlayer {
   xp_contribution: number;
   merc_camp_captures: number;
   time_spent_dead_s: number;
-  talents: Talent[];
+  talents: (Talent & { label?: string })[];
   score: HerosScore | null;
 }
 
@@ -160,7 +160,7 @@ export interface DraftResult {
   win_conditions: string[];
   counters: string[];
   phases: { early: number; mid: number; late: number };
-  recommendations: { hero_id: string; hero: string; role: Role; score: number; personal_winrate: number | null }[];
+  recommendations: { hero_id: string; hero: string; role: Role; score: number; personal_winrate: number | null; tier: string | null }[];
   composition_score: number;
   unknown_heroes: string[];
 }
@@ -226,4 +226,49 @@ export interface AppSettings {
   claude_model: string;
   has_api_key: boolean;
   data_dir: string;
+}
+
+export interface TierEntry {
+  hero_id: string;
+  hero: string;
+  tier: "S" | "A" | "B" | "C" | "D";
+  role: Role | null;
+  my_games: number;
+  my_winrate: number | null;
+}
+
+export interface TierListData {
+  key: string;
+  title: string;
+  url: string;
+  updated_label: string | null;
+  fetched_at: string | null;
+  entries: TierEntry[];
+}
+
+export interface Combo {
+  heroes: { hero_id: string; hero: string; tier: string | null }[];
+  mutual: boolean;
+  score: number;
+}
+
+export interface GuideBuild {
+  title: string;
+  talents: { level: number; position: number; talent: string | null; name: string }[];
+}
+
+export interface HeroMeta {
+  hero_id: string;
+  hero: string;
+  role: Role;
+  tiers: Record<string, string | null>;
+  guide: {
+    url: string;
+    fetched_at: string;
+    synergies: { hero_id: string; hero: string }[];
+    counters: { hero_id: string; hero: string }[];
+    builds: GuideBuild[];
+  } | null;
+  talent_catalog: Record<string, { id: string; name: string; sort: number; description: string }[]>;
+  replay_talent_stats: { tier: number; level: number; options: { talent: string; name: string; games: number; winrate: number; popularity: number }[] }[];
 }

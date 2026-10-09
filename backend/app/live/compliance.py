@@ -14,7 +14,9 @@ ALLOWED_SOURCES: dict[str, str] = {
                         "informations affichées sur l'écran de chargement (joueurs, carte).",
     "user_input": "Saisies volontaires du joueur dans l'overlay (carte, synchronisation d'horloge, niveaux "
                   "d'équipe affichés en haut de l'écran, camps observés).",
-    "static_data": "Données publiques : timings de carte, profils de héros, patch notes.",
+    "static_data": "Données publiques : timings de carte, profils de héros, catalogue des talents.",
+    "public_websites": "Pages publiques d'Icy Veins (tier lists, guides : builds, synergies, contres), "
+                       "téléchargées hors partie et citées avec un lien vers la source.",
     "own_history": "Historique de replays du joueur et statistiques agrégées dérivées.",
 }
 

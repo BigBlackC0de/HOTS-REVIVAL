@@ -138,7 +138,7 @@ export function MatchReport() {
       {me?.talents.length ? (
         <Card title="Talents choisis">
           <div className="flex flex-wrap gap-2">
-            {me.talents.map((t) => <span key={t.tier} className="chip">Niv. {t.level} · {t.name}</span>)}
+            {me.talents.map((t) => <span key={t.tier} className="chip">Niv. {t.level} · {t.label ?? t.name}</span>)}
           </div>
         </Card>
       ) : null}

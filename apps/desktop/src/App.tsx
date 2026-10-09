@@ -6,6 +6,7 @@ import { Draft } from "./pages/Draft";
 import { LiveControl } from "./pages/LiveControl";
 import { MatchReport } from "./pages/MatchReport";
 import { Matches } from "./pages/Matches";
+import { Meta } from "./pages/Meta";
 import { Overlay } from "./pages/Overlay";
 import { Settings } from "./pages/Settings";
 
@@ -19,6 +20,7 @@ export function App() {
           <Route path="matches" element={<Matches />} />
           <Route path="matches/:id" element={<MatchReport />} />
           <Route path="draft" element={<Draft />} />
+          <Route path="meta" element={<Meta />} />
           <Route path="coach" element={<Coach />} />
           <Route path="live" element={<LiveControl />} />
           <Route path="settings" element={<Settings />} />

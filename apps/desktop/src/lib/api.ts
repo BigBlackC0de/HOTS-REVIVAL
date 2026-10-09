@@ -1,6 +1,6 @@
 import { bridge } from "./bridge";
 import type {
-  AppSettings, Compliance, DraftResult, Hero, MapInfo, MatchDetail, MatchSummary, OverlayState, Profile,
+  AppSettings, Combo, Compliance, HeroMeta, TierListData, DraftResult, Hero, MapInfo, MatchDetail, MatchSummary, OverlayState, Profile,
   ProgressionPoint, Report, ReplayStatus,
 } from "./types";
 
@@ -50,6 +50,10 @@ export const api = {
   settings: () => request<AppSettings>("/settings"),
   saveSettings: (body: Partial<{ replay_dir: string; player_battletag: string; anthropic_api_key: string; claude_model: string }>) =>
     request<AppSettings>("/settings", { method: "PUT", body: JSON.stringify(body) }),
+  tierLists: () => request<TierListData[]>("/meta/tierlists"),
+  combos: () => request<Combo[]>("/meta/combos"),
+  heroMeta: (heroId: string) => request<HeroMeta>(`/meta/heroes/${heroId}`),
+  refreshMetaDirect: (force = false) => post<{ updated: number; errors: unknown[] }>(`/meta/refresh?force=${force}`),
   coachStatus: () => request<{ available: boolean; model: string }>("/coach/status"),
   live: {
     state: () => request<OverlayState>("/live/state"),

@@ -197,3 +197,32 @@ class CoachMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     conversation: Mapped[CoachConversation] = relationship(back_populates="messages")
+
+
+class MetaTierList(Base):
+    """Tier list Icy Veins (dernière version valide)."""
+
+    __tablename__ = "meta_tier_lists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    list_key: Mapped[str] = mapped_column(String(32), unique=True)
+    title: Mapped[str] = mapped_column(String(80))
+    url: Mapped[str] = mapped_column(Text)
+    updated_label: Mapped[str | None] = mapped_column(String(40))
+    entries: Mapped[list] = mapped_column(JSONType, default=list)  # [{hero_id, tier, role}]
+    slugs: Mapped[dict] = mapped_column(JSONType, default=dict)  # hero_id -> slug Icy Veins
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MetaHeroGuide(Base):
+    """Guide Icy Veins d'un héros : synergies, contres, builds (noms de talents résolus)."""
+
+    __tablename__ = "meta_hero_guides"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    hero_id: Mapped[str] = mapped_column(String(48), unique=True)
+    url: Mapped[str] = mapped_column(Text)
+    synergies: Mapped[list] = mapped_column(JSONType, default=list)
+    counters: Mapped[list] = mapped_column(JSONType, default=list)
+    builds: Mapped[list] = mapped_column(JSONType, default=list)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

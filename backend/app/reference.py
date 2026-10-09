@@ -67,6 +67,13 @@ class _Registry:
                 self._hero_alias[normalize(alias)] = hero.id
                 self._hero_alias[normalize("Hero" + alias)] = hero.id
 
+        talents_file = DATA_DIR / "talents.json"
+        if talents_file.exists():  # alias issus des données de jeu (attributeId, unité)
+            for hero_id, h in json.loads(talents_file.read_text(encoding="utf-8"))["heroes"].items():
+                for alias in (h.get("unit_id"), h.get("attribute_id"), h.get("slug"), h.get("name")):
+                    if alias:
+                        self._hero_alias.setdefault(normalize(alias), hero_id)
+
         self.camp_respawn_s: dict[str, int] = maps_raw["_meta"]["camp_respawn_s"]
         self.camps_first_spawn_s: int = maps_raw["_meta"]["camps_first_spawn_s"]
         self.maps: dict[str, MapInfo] = {}

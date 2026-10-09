@@ -6,6 +6,8 @@ export interface HotsBridge {
   setOverlayInteractive: (value: boolean) => Promise<void>;
   shortcuts: () => Promise<Record<string, string>>;
   openPath: (target: "logs" | "data") => Promise<string>;
+  refreshMeta: (force: boolean) => Promise<{ updated: number; failed: number }>;
+  onMetaProgress: (cb: (p: { done: number; total: number; current?: string; finished?: boolean }) => void) => () => void;
   onOverlayMode: (cb: (mode: { interactive: boolean }) => void) => () => void;
 }
 

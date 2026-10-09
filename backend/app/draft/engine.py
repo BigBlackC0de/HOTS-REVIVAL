@@ -23,6 +23,23 @@ NAMED_COMBOS: list[tuple[str, str, str]] = [
 ]
 
 PHASES = ("early", "mid", "late")
+TIER_BONUS = {"S": 1.5, "A": 1.0, "B": 0.5, "C": 0.0, "D": -0.5}
+
+
+@dataclass
+class MetaData:
+    """Données Icy Veins : tiers et, par héros, synergies / héros qui le contrent."""
+
+    tiers: dict[str, str] = field(default_factory=dict)
+    synergies: dict[str, list[str]] = field(default_factory=dict)
+    countered_by: dict[str, list[str]] = field(default_factory=dict)
+
+    def synergy(self, a: str, b: str) -> bool:
+        return b in self.synergies.get(a, []) or a in self.synergies.get(b, [])
+
+    def counters(self, attacker: str, target: str) -> bool:
+        """`attacker` contre `target` selon le guide de `target`."""
+        return attacker in self.countered_by.get(target, [])
 
 
 @dataclass
@@ -141,8 +158,10 @@ def analyze_draft(
     bans: list[str] | None = None,
     personal_winrates: dict[str, float] | None = None,
     top_n: int = 5,
+    meta: MetaData | None = None,
 ) -> DraftAnalysis:
     result = DraftAnalysis()
+    meta = meta or MetaData()
     ally_heroes = _resolve(allies, result.unknown_heroes)
     enemy_heroes = _resolve(enemies, result.unknown_heroes)
     ally, enemy = _profile(ally_heroes), _profile(enemy_heroes)
@@ -180,6 +199,13 @@ def analyze_draft(
         if a in enemy_ids and b in enemy_ids:
             na, nb = registry().heroes[a].name, registry().heroes[b].name
             result.threats.append(f"Attention au combo {na} + {nb}. {why}")
+    for a in ally_heroes:
+        for b in ally_heroes:
+            if a.id < b.id and meta.synergy(a.id, b.id):
+                result.synergies.append(f"Bonne synergie {a.name} + {b.name} (Icy Veins).")
+        for e in enemy_heroes:
+            if meta.counters(e.id, a.id):
+                result.threats.append(f"{a.name} est contré par {e.name} : jouez prudemment.")
     if enemy.has("dive", 2):
         result.threats.append("L'équipe adverse plonge : restez groupés autour de vos héros fragiles.")
     if enemy.has("poke", 2):
@@ -219,6 +245,10 @@ def analyze_draft(
             if hero.id in taken:
                 continue
             score = role_need(hero, ally) + counter_score(hero, enemy) + synergy_score(hero, ally)
+            score += TIER_BONUS.get(meta.tiers.get(hero.id, ""), 0.0)
+            score += 1.2 * sum(meta.counters(hero.id, e.id) for e in enemy_heroes)
+            score -= 1.0 * sum(meta.counters(e.id, hero.id) for e in enemy_heroes)
+            score += 1.0 * sum(meta.synergy(hero.id, a.id) for a in ally_heroes)
             personal = (personal_winrates or {}).get(hero.id)
             if personal is not None:
                 score += (personal - 0.5) * 4
@@ -227,7 +257,7 @@ def analyze_draft(
         for score, hero, personal in candidates[:top_n]:
             result.recommendations.append(
                 {"hero_id": hero.id, "hero": hero.name, "role": hero.role, "score": round(score, 2),
-                 "personal_winrate": personal}
+                 "personal_winrate": personal, "tier": meta.tiers.get(hero.id)}
             )
         if result.recommendations:
             top = result.recommendations[0]["hero"]
@@ -237,4 +267,4 @@ def analyze_draft(
     return result
 
 
-__all__ = ["analyze_draft", "DraftAnalysis", "ROLES"]
+__all__ = ["analyze_draft", "DraftAnalysis", "MetaData", "ROLES"]

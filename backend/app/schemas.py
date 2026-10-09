@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.talents import with_names
 
 
 class ORM(BaseModel):
@@ -23,6 +25,11 @@ class HerosScoreOut(ORM):
 
 
 class MatchPlayerOut(ORM):
+    @field_validator("talents", mode="after")
+    @classmethod
+    def _talent_labels(cls, value: list) -> list:
+        return with_names(value)
+
     id: int
     slot: int
     team: int

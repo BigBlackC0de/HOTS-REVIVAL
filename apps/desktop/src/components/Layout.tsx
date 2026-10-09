@@ -6,6 +6,7 @@ import { bridge } from "../lib/bridge";
 const NAV = [
   { to: "/", label: "Tableau de bord", icon: "◆" },
   { to: "/matches", label: "Parties", icon: "⚔" },
+  { to: "/meta", label: "Méta & tier lists", icon: "★" },
   { to: "/draft", label: "Draft Assistant", icon: "♜" },
   { to: "/coach", label: "Coach IA", icon: "✦" },
   { to: "/live", label: "Overlay", icon: "◎" },

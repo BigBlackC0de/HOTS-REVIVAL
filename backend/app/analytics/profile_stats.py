@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import Match, MatchPlayer
+from app.talents import talent_name
 
 PRIOR_GAMES = 6  # lissage bayésien vers 50 % pour les petits échantillons
 MIN_GAMES = 3
@@ -150,7 +151,7 @@ def talent_stats(db: Session, hero_id: str) -> list[dict]:
         options = []
         for name, b in tiers[tier].items():
             options.append({
-                "talent": name, "games": b.games,
+                "talent": name, "name": talent_name(name), "games": b.games,
                 "winrate": round(b.wins / b.games, 3),
                 "popularity": round(b.games / tier_games[tier], 3),
                 "smoothed_winrate": round(smoothed_winrate(b.wins, b.games), 3),

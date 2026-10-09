@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.analytics.profile_stats import build_profile, smoothed_winrate
 from app.db import get_db
-from app.draft.engine import analyze_draft
+from app.draft.engine import MetaData, analyze_draft
+from app.meta.service import all_guides, all_tiers
 from app.models import Draft
 from app.observability import track
 from app.schemas import DraftRequest, DraftResponse
@@ -21,7 +22,13 @@ def analyze(body: DraftRequest, db: Session = Depends(get_db)) -> DraftResponse:
     if body.use_personal_stats:
         by_hero = build_profile(db).by_hero
         personal = {h: smoothed_winrate(v["wins"], v["games"]) for h, v in by_hero.items() if v["games"] >= 3}
-    result = analyze_draft(body.allies, body.enemies, body.map_id, body.bans, personal)
+    guides = all_guides(db)
+    meta = MetaData(
+        tiers=all_tiers(db, "general"),
+        synergies={h: g.synergies for h, g in guides.items()},
+        countered_by={h: g.counters for h, g in guides.items()},
+    )
+    result = analyze_draft(body.allies, body.enemies, body.map_id, body.bans, personal, meta=meta)
     db.add(Draft(map_id=body.map_id, allies=body.allies, enemies=body.enemies, bans=body.bans, result=asdict(result)))
     db.commit()
     track("draft_analyzed", {"allies": len(body.allies), "enemies": len(body.enemies)})

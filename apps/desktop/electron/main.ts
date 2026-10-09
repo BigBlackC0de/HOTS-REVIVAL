@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import * as Sentry from "@sentry/electron/main";
 import path from "node:path";
 import { backendLogPath, ensureBackend, stopBackend } from "./backend";
+import { onMetaProgress, refreshMeta, scheduleMetaRefresh } from "./meta";
 import { createOverlay, setInteractive, toggleOverlay } from "./overlay";
 import { registerShortcuts, SHORTCUTS, unregisterShortcuts } from "./shortcuts";
 
@@ -64,6 +65,7 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle("shortcuts:list", () =>
       Object.fromEntries(Object.entries(SHORTCUTS).map(([k, v]) => [k, v.label])),
     );
+    ipcMain.handle("meta:refresh", (_e, force: boolean) => refreshMeta(Boolean(force)));
     ipcMain.handle("app:open-path", (_e, target: "logs" | "data") =>
       shell.openPath(target === "logs" ? backendLogPath() : app.getPath("userData")),
     );
@@ -80,6 +82,8 @@ if (!app.requestSingleInstanceLock()) {
     if (mainWindow) loadRoute(mainWindow, "/");
     createOverlay(loadRoute);
     registerShortcuts();
+    onMetaProgress((p) => mainWindow?.webContents.send("meta:progress", p));
+    scheduleMetaRefresh();
   });
 
   app.on("will-quit", () => {

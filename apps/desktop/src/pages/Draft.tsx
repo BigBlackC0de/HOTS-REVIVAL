@@ -102,7 +102,7 @@ export function Draft() {
                       const slot = allies.indexOf("");
                       if (slot >= 0) setAt(allies, setAllies, slot, r.hero_id);
                     }} className="flex w-full items-center justify-between rounded-lg border border-void-600 px-3 py-2 text-left hover:border-gold-500">
-                      <span><span className="mr-2 text-gold-400">#{i + 1}</span><b className="text-white">{r.hero}</b> <span className="text-xs text-slate-400">{ROLE_FR[r.role]}</span></span>
+                      <span><span className="mr-2 text-gold-400">#{i + 1}</span><b className="text-white">{r.hero}</b> <span className="text-xs text-slate-400">{ROLE_FR[r.role]}</span>{r.tier && <span className="ml-2 rounded bg-gold-500 px-1 text-[10px] text-void-950">Tier {r.tier}</span>}</span>
                       <span className="text-xs text-slate-400">{r.personal_winrate !== null ? `vous : ${pct(r.personal_winrate)}` : ""} · {r.score.toFixed(1)}</span>
                     </button>
                   ))}
