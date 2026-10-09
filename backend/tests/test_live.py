@@ -219,3 +219,21 @@ def test_screen_levels_ignored_before_clock_is_read():
     s.sync_clock(40, "écran")
     s.set_levels(ally=1, enemy=2, source="écran")
     assert s.snapshot()["levels"]["ally"] == 1
+
+
+def test_manual_correction_wins_over_bad_screen_reading():
+    from app.analytics.timings import DEFAULT_LEVEL_CURVE
+
+    s = LiveSession()
+    s.start("volskaya", None, 0, {"level_curve": DEFAULT_LEVEL_CURVE})
+    s.sync_clock(40, "écran")
+    s.set_levels(ally=5, enemy=1, source="écran")  # zone mal placée
+    s.set_levels(ally=1, enemy=1, source="manuel")  # le joueur corrige
+    s.set_levels(ally=5, enemy=None, source="écran")  # même erreur : ignorée
+    assert s.snapshot()["levels"]["ally"] == 1
+    s.set_levels(ally=2, enemy=2, source="écran")  # vraie montée de niveau : retenue
+    snap = s.snapshot()["levels"]
+    assert (snap["ally"], snap["enemy"], snap["source"]) == (2, 2, "écran")
+    s.set_levels(ally=1, enemy=9, source="écran")  # baisse ou saut : ignorés
+    snap = s.snapshot()["levels"]
+    assert (snap["ally"], snap["enemy"]) == (2, 2)

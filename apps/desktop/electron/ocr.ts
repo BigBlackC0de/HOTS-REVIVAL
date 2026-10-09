@@ -96,6 +96,13 @@ export class Stabilizer {
     this.candidate = null;
     this.value = null;
   }
+
+  /** Recale sur une valeur sûre (correction manuelle du joueur). */
+  sync(value: number): void {
+    if (value === this.value) return;
+    this.candidate = null;
+    this.value = value;
+  }
 }
 
 // Première valeur : tout niveau 1-30 (l'application peut démarrer en pleine partie) ;

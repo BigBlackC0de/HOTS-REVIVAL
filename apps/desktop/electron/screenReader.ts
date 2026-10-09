@@ -282,6 +282,11 @@ async function tick(): Promise<void> {
       misses = blackCount = 0;
       loadingSeenAt = Date.now();
     }
+    if (live.levels?.source === "manuel") {
+      // correction du joueur : elle fait foi, les lectures suivantes partent de là
+      ally.sync(live.levels.ally);
+      enemy.sync(live.levels.enemy);
+    }
     if (!(await startCapture())) {
       state = "error";
       return;

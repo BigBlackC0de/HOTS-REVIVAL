@@ -22,6 +22,7 @@ FLASH_DURATION_S = 8
 MAX_ALERTS = 3
 ENDED_LINGER_S = 15
 LEVEL_SOURCES = ("manuel", "écran")
+SCREEN_MAX_STEP = 2  # écart max accepté entre deux lectures d'écran successives retenues
 
 
 def talent_tier(level: int) -> int:
@@ -148,6 +149,15 @@ class LiveSession:
                 if ally is not None and not self.plausible_level(ally):
                     ally = None
                 if enemy is not None and not self.plausible_level(enemy):
+                    enemy = None
+                if ally is None and enemy is None:
+                    return
+            if source == "écran" and self.level_source is not None:
+                # un niveau ne baisse jamais et monte par petits pas : une lecture qui contredit
+                # la valeur connue (notamment une correction manuelle) est une erreur d'OCR
+                if ally is not None and not self.ally_level <= ally <= self.ally_level + SCREEN_MAX_STEP:
+                    ally = None
+                if enemy is not None and not self.enemy_level <= enemy <= self.enemy_level + SCREEN_MAX_STEP:
                     enemy = None
                 if ally is None and enemy is None:
                     return
