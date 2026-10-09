@@ -5,7 +5,8 @@ import { Card, Empty, List } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import { useLiveState } from "../hooks/liveContext";
 import { api } from "../lib/api";
-import { bridge } from "../lib/bridge";
+import { bridge, type OverlayPrefs } from "../lib/bridge";
+import { speak } from "../lib/voice";
 import { clock, pct } from "../lib/format";
 import type { HeroMeta, LobbyPlayer, OverlayState } from "../lib/types";
 
@@ -118,17 +119,26 @@ function Players({ gameId }: { gameId: number }) {
 
 function VoiceToggle() {
   const b = bridge();
-  const [on, setOn] = useState<boolean | null>(null);
+  const [prefs, setPrefs] = useState<OverlayPrefs | null>(null);
   useEffect(() => {
-    void b?.prefs.get().then((p) => setOn(p.voice));
+    void b?.prefs.get().then(setPrefs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  if (!b || on === null) return null;
+  if (!b || !prefs) return null;
+  const update = (next: Partial<OverlayPrefs>) => void b.prefs.set(next).then(setPrefs);
   return (
-    <button className="btn-ghost py-1" title="Guide vocal"
-      onClick={() => void b.prefs.set({ voice: !on }).then((p) => setOn(p.voice))}>
-      {on ? "🔊 Voix" : "🔇 Voix coupée"}
-    </button>
+    <div className="flex items-center gap-2 rounded-lg border border-void-600 px-2">
+      <button className="py-1 text-sm" title="Guide vocal" onClick={() => update({ voice: !prefs.voice })}>
+        {prefs.voice ? "🔊" : "🔇"}
+      </button>
+      <input type="range" min={0.05} max={1} step={0.05} value={prefs.volume} disabled={!prefs.voice}
+        title={`Volume ${Math.round(prefs.volume * 100)} %`} className="w-24 border-0 p-0"
+        onChange={(e) => setPrefs({ ...prefs, volume: Number(e.target.value) })}
+        onMouseUp={(e) => update({ volume: Number((e.target as HTMLInputElement).value) })}
+        onKeyUp={(e) => update({ volume: Number((e.target as HTMLInputElement).value) })} />
+      <button className="text-xs text-slate-400 hover:text-white" disabled={!prefs.voice}
+        onClick={() => speak("Test du volume.", prefs)}>test</button>
+    </div>
   );
 }
 
