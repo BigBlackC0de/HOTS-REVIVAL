@@ -58,7 +58,7 @@ class LiveSession:
     talent_build: list[dict] = field(default_factory=list)
     ended_at: float | None = None
     loading_since: float | None = None
-    _flashes: dict[str, tuple[str, str, float]] = field(default_factory=dict)
+    _flashes: dict[str, tuple[str, str, float, str]] = field(default_factory=dict)
     _flashed: set[str] = field(default_factory=set)
     _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
@@ -169,13 +169,15 @@ class LiveSession:
                 ally = max(1, min(30, ally))
                 crossed = [lvl for lvl in TALENT_LEVELS[1:] if self.ally_level < lvl <= ally]
                 if crossed:  # un seul message, même si plusieurs paliers d'un coup
-                    self._flash_locked(f"ally-{crossed[-1]}", f"Niveau {crossed[-1]} atteint.", "success")
+                    self._flash_locked(f"ally-{crossed[-1]}", f"Niveau {crossed[-1]} atteint.", "success",
+                                       f"ally-level-{crossed[-1]}")
                 self.ally_level = ally
             if enemy is not None:
                 enemy = max(1, min(30, enemy))
                 crossed = [lvl for lvl in (10, 16, 20) if self.enemy_level < lvl <= enemy]
                 if crossed:
-                    self._flash_locked(f"enemy-{crossed[-1]}", f"L'équipe adverse atteint le niveau {crossed[-1]}.", "danger")
+                    self._flash_locked(f"enemy-{crossed[-1]}", f"L'équipe adverse atteint le niveau {crossed[-1]}.",
+                                       "danger", f"enemy-level-{crossed[-1]}")
                 self.enemy_level = enemy
             self.level_source = source if source in LEVEL_SOURCES else "manuel"
 
@@ -220,10 +222,10 @@ class LiveSession:
     def clock(self) -> float | None:
         return None if self.clock_anchor is None else max(0.0, time.monotonic() - self.clock_anchor)
 
-    def _flash_locked(self, key: str, text: str, level: str) -> None:
+    def _flash_locked(self, key: str, text: str, level: str, voice_key: str) -> None:
         if key not in self._flashed:
             self._flashed.add(key)
-            self._flashes[key] = (text, level, time.monotonic() + FLASH_DURATION_S)
+            self._flashes[key] = (text, level, time.monotonic() + FLASH_DURATION_S, voice_key)
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -250,7 +252,7 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
     clock = s.clock() if s.status == "in_game" else None
     info = registry().maps.get(s.map_id or "")
     alerts: list[dict[str, Any]] = []
-    tips: list[str] = []
+    tips: list[dict[str, str]] = []  # {text, voice_key} : la clé désigne la phrase enregistrée (profil de voix)
 
     # Objectif
     objective = None
@@ -267,7 +269,8 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
             priority = "Regroupement pour l'objectif"
             if remaining > 0:
                 alerts.append({"id": "objective", "priority": 2, "level": "warning",
-                               "text": f"Objectif dans {int(remaining)} s : regroupez-vous."})
+                               "text": f"Objectif dans {int(remaining)} s : regroupez-vous.",
+                               "voice_key": "objective-soon"})
         objective = {
             "name": info.objective, "map": info.name, "next_in_s": remaining,
             "source": s.timings.get("source", "estimation"), "samples": s.timings.get("samples", 0),
@@ -283,7 +286,8 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
         camps.append({"camp": c.camp_type, "side": c.side, "respawn_in_s": left})
         if left is not None and 0 < left <= 20 and c.side == "ally":
             alerts.append({"id": f"camp-{c.camp_type}", "priority": 3, "level": "info",
-                           "text": f"Camp {c.camp_type} disponible dans {int(left)} s."})
+                           "text": f"Camp {c.camp_type} disponible dans {int(left)} s.",
+                           "voice_key": f"camp-{c.camp_type}"})
 
     # Powerspikes (niveaux d'équipe lus en haut de l'écran ou saisis) — rien si inconnus
     known = s.level_source is not None
@@ -292,22 +296,24 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
     if s.status == "in_game" and known:
         if enemy_tier > ally_tier:
             alerts.append({"id": "talent-disadvantage", "priority": 1, "level": "danger",
-                           "text": "Désavantage de talent : évitez les combats."})
-            tips.append("Ne forcez pas un combat en infériorité de talent.")
+                           "text": "Désavantage de talent : évitez les combats.", "voice_key": "talent-disadvantage"})
+            tips.append({"text": "Ne forcez pas un combat en infériorité de talent.", "voice_key": "tip-no-fight"})
         elif ally_tier > enemy_tier:
             lvl = TALENT_LEVELS[ally_tier - 1]
-            tips.append(f"Avantage niveau {lvl} : forcez l'objectif ou un combat.")
+            tips.append({"text": f"Avantage niveau {lvl} : forcez l'objectif ou un combat.",
+                         "voice_key": "tip-talent-advantage"})
         if ally_level in (9, 15, 19):
-            tips.append(f"Niveau {ally_level + 1} imminent : attendez le talent avant d'engager.")
+            tips.append({"text": f"Niveau {ally_level + 1} imminent : attendez le talent avant d'engager.",
+                         "voice_key": f"tip-level-soon-{ally_level + 1}"})
         if objective and objective["next_in_s"] is not None and 0 < objective["next_in_s"] <= OBJECTIVE_WARNING_S:
-            tips.append("Restez groupés.")
+            tips.append({"text": "Restez groupés.", "voice_key": "tip-stay-grouped"})
 
     now = time.monotonic()
-    for key, (text, level, until) in list(s._flashes.items()):
+    for key, (text, level, until, voice_key) in list(s._flashes.items()):
         if until < now:
             del s._flashes[key]
         else:
-            alerts.append({"id": key, "priority": 0, "level": level, "text": text})
+            alerts.append({"id": key, "priority": 0, "level": level, "text": text, "voice_key": voice_key})
     alerts.sort(key=lambda a: a["priority"])
     for a in alerts:
         a["voice"] = True
@@ -339,7 +345,8 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
         "talents": s.talent_build,
         "next_talent": next_talent,
         "alerts": alerts[:MAX_ALERTS],
-        "tips": tips[:2],
+        "tips": [t["text"] for t in tips[:2]],  # texte seul (affichage, compatibilité)
+        "tip_items": tips[:2],  # mêmes conseils + voice_key pour le guide vocal
         "sources": ["game_process", "battlelobby_file", "screen_reading", "user_input", "static_data", "own_history"],
     }
 

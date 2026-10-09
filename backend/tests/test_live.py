@@ -237,3 +237,37 @@ def test_manual_correction_wins_over_bad_screen_reading():
     s.set_levels(ally=1, enemy=9, source="écran")  # baisse ou saut : ignorés
     snap = s.snapshot()["levels"]
     assert (snap["ally"], snap["enemy"]) == (2, 2)
+
+
+def test_voice_keys_on_alerts_and_tips():
+    """Chaque alerte et chaque conseil porte une clé stable (phrases enregistrées des profils de voix)."""
+    s = LiveSession()
+    s.on_lobby([], "towers_of_doom", "appris", None, TOD)
+    s.start(None, None, clock_s=120)
+    s.set_levels(ally=9, enemy=9)
+    s.set_levels(ally=None, enemy=10)
+    s.camp_taken("siege", "ally")
+    snap = s.snapshot()
+    keys = {a["id"]: a["voice_key"] for a in snap["alerts"]}
+    assert keys["talent-disadvantage"] == "talent-disadvantage"
+    assert keys["enemy-10"] == "enemy-level-10"
+    assert keys["objective"] == "objective-soon"
+    assert snap["tips"] == [t["text"] for t in snap["tip_items"]]
+    tip_keys = [t["voice_key"] for t in snap["tip_items"]]
+    assert tip_keys == ["tip-no-fight", "tip-level-soon-10"]
+
+    s.set_levels(ally=13, enemy=None)  # 10 et 13 franchis : une seule annonce (13)
+    snap = s.snapshot()
+    assert {a["id"]: a["voice_key"] for a in snap["alerts"]}["ally-13"] == "ally-level-13"
+    assert [t["voice_key"] for t in snap["tip_items"]] == ["tip-talent-advantage", "tip-stay-grouped"]
+
+
+def test_camp_alert_voice_key(monkeypatch):
+    s = LiveSession()
+    s.start("dragon_shire", None, 0)
+    s.camp_taken("boss", "ally")
+    real = time.monotonic
+    respawn = s.camps[0].respawn_at
+    monkeypatch.setattr(time, "monotonic", lambda: real() + respawn - 10)
+    alerts = {a["id"]: a for a in s.snapshot()["alerts"]}
+    assert alerts["camp-boss"]["voice_key"] == "camp-boss"

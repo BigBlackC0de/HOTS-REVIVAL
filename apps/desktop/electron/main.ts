@@ -12,6 +12,10 @@ import { checkForUpdates, downloadUpdate, getUpdateStatus, initUpdater, installU
 import { createOverlay, placeOverlay, say, sendPrefs, setInteractive, toggleOverlay } from "./overlay";
 import { loadPrefs, savePrefs, type OverlayPrefs } from "./prefs";
 import { registerShortcuts, SHORTCUTS, unregisterShortcuts } from "./shortcuts";
+import {
+  assignImported, cleanProfileName, createProfile, deleteClip, deleteProfile, importClips, listClips, listProfiles,
+  openProfileFolder, readClip, renameProfile, saveClip,
+} from "./voices";
 
 if (process.env.HOTS_SENTRY_DSN) Sentry.init({ dsn: process.env.HOTS_SENTRY_DSN });
 
@@ -134,6 +138,40 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle("screen:save", (_e, cfg: Partial<ScreenReaderConfig>) => saveConfig(cfg));
     ipcMain.handle("screen:capture", (_e, fresh: boolean) => calibrationCapture(fresh !== false));
     ipcMain.handle("screen:test", (_e, regions: Regions) => testRegions(regions));
+    // Profils de voix : chaque modification prévient toutes les fenêtres (cache des clips du guide vocal)
+    const voicesChanged = <T>(profile: string, value: T): T => {
+      for (const w of BrowserWindow.getAllWindows()) w.webContents.send("voices:changed", profile);
+      return value;
+    };
+    const setProfilePref = (voiceProfile: string | null) => {
+      savePrefs({ voiceProfile });
+      sendPrefs();
+    };
+    ipcMain.handle("voices:profiles", () => listProfiles());
+    ipcMain.handle("voices:create", (_e, name: string) => createProfile(name));
+    ipcMain.handle("voices:rename", (_e, from: string, to: string) => {
+      const name = renameProfile(from, to);
+      if (loadPrefs().voiceProfile === cleanProfileName(from)) setProfilePref(name);
+      return voicesChanged(name, name);
+    });
+    ipcMain.handle("voices:remove", (_e, name: string) => {
+      deleteProfile(name);
+      if (loadPrefs().voiceProfile === cleanProfileName(name)) setProfilePref(null);
+      voicesChanged(name, undefined);
+    });
+    ipcMain.handle("voices:clips", (_e, profile: string) => listClips(profile));
+    ipcMain.handle("voices:save", (_e, profile: string, key: string, data: Uint8Array, ext: string) =>
+      voicesChanged(profile, saveClip(profile, key, data, ext)),
+    );
+    ipcMain.handle("voices:delete-clip", (_e, profile: string, key: string) => voicesChanged(profile, deleteClip(profile, key)));
+    ipcMain.handle("voices:read", (_e, profile: string, key: string) => readClip(profile, key));
+    ipcMain.handle("voices:import", async (e, profile: string, keys: string[]) =>
+      voicesChanged(profile, await importClips(BrowserWindow.fromWebContents(e.sender), profile, keys)),
+    );
+    ipcMain.handle("voices:assign", (_e, profile: string, key: string, file: string) =>
+      voicesChanged(profile, assignImported(profile, key, file)),
+    );
+    ipcMain.handle("voices:open", (_e, profile: string) => openProfileFolder(profile));
     ipcMain.handle("app:version", () => app.getVersion());
     ipcMain.handle("updater:status", () => getUpdateStatus());
     ipcMain.handle("updater:check", () => checkForUpdates());

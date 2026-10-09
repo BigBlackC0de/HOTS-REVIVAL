@@ -7,6 +7,7 @@ import { OverlaySettings } from "../components/OverlaySettings";
 import { RankCard } from "../components/RankCard";
 import { ScreenCalibration } from "../components/ScreenCalibration";
 import { UpdateButton } from "../components/UpdateButton";
+import { VoiceProfiles } from "../components/VoiceProfiles";
 
 export function Settings() {
   const settings = useAsync(api.settings);
@@ -120,6 +121,12 @@ export function Settings() {
       {bridge() && (
         <Card title="Guide vocal & mode partie">
           <OverlaySettings />
+        </Card>
+      )}
+
+      {bridge() && (
+        <Card title="Profils de voix : vos propres annonces">
+          <VoiceProfiles />
         </Card>
       )}
 

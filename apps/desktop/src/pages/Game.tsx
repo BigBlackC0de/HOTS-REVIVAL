@@ -6,7 +6,7 @@ import { useAsync } from "../hooks/useAsync";
 import { useLiveState } from "../hooks/liveContext";
 import { api } from "../lib/api";
 import { bridge, type OverlayPrefs, type ReaderState, type ScreenStatus } from "../lib/bridge";
-import { speak } from "../lib/voice";
+import { announce } from "../lib/voice";
 import { clock, pct } from "../lib/format";
 import type { HeroMeta, LobbyPlayer, OverlayState, TeamMember } from "../lib/types";
 
@@ -195,7 +195,7 @@ function VoiceToggle() {
         onMouseUp={(e) => update({ volume: Number((e.target as HTMLInputElement).value) })}
         onKeyUp={(e) => update({ volume: Number((e.target as HTMLInputElement).value) })} />
       <button className="text-xs text-slate-400 hover:text-white" disabled={!prefs.voice}
-        onClick={() => speak("Test du volume.", prefs)}>test</button>
+        onClick={() => announce({ text: "Test du volume.", key: "objective-soon" }, prefs)}>test</button>
     </div>
   );
 }

@@ -22,7 +22,12 @@ export interface OverlayPrefs {
   overlay: boolean;
   displayId: number | null;
   gameDisplayId: number | null;
+  voiceProfile: string | null;
+  micDeviceId: string | null;
 }
+
+export interface VoiceClip { key: string; ext: string; size: number; mtime: number }
+export interface VoiceImportResult { imported: string[]; unmatched: { path: string; name: string }[] }
 
 /** Pont Electron (preload). Absent quand l'UI tourne dans un navigateur (npm run dev:web). */
 export interface HotsBridge {
@@ -48,6 +53,20 @@ export interface HotsBridge {
     save: (cfg: Partial<ScreenConfig>) => Promise<ScreenConfig>;
     capture: (fresh: boolean) => Promise<{ image: string; reading: ScreenReading } | null>;
     test: (regions: Regions) => Promise<ScreenReading | null>;
+  };
+  voices: {
+    profiles: () => Promise<string[]>;
+    create: (name: string) => Promise<string>;
+    rename: (from: string, to: string) => Promise<string>;
+    remove: (name: string) => Promise<void>;
+    clips: (profile: string) => Promise<VoiceClip[]>;
+    save: (profile: string, key: string, data: Uint8Array, ext: string) => Promise<VoiceClip>;
+    deleteClip: (profile: string, key: string) => Promise<void>;
+    read: (profile: string, key: string) => Promise<{ data: Uint8Array; mime: string } | null>;
+    import: (profile: string, keys: string[]) => Promise<VoiceImportResult>;
+    assign: (profile: string, key: string, file: string) => Promise<void>;
+    openFolder: (profile: string) => Promise<string>;
+    onChanged: (cb: (profile: string) => void) => () => void;
   };
   version: () => Promise<string>;
   updater: {

@@ -37,6 +37,26 @@ const api = {
     capture: (fresh: boolean): Promise<unknown> => ipcRenderer.invoke("screen:capture", fresh),
     test: (regions: unknown): Promise<unknown> => ipcRenderer.invoke("screen:test", regions),
   },
+  voices: {
+    profiles: (): Promise<string[]> => ipcRenderer.invoke("voices:profiles"),
+    create: (name: string): Promise<string> => ipcRenderer.invoke("voices:create", name),
+    rename: (from: string, to: string): Promise<string> => ipcRenderer.invoke("voices:rename", from, to),
+    remove: (name: string): Promise<void> => ipcRenderer.invoke("voices:remove", name),
+    clips: (profile: string): Promise<unknown> => ipcRenderer.invoke("voices:clips", profile),
+    save: (profile: string, key: string, data: Uint8Array, ext: string): Promise<unknown> =>
+      ipcRenderer.invoke("voices:save", profile, key, data, ext),
+    deleteClip: (profile: string, key: string): Promise<void> => ipcRenderer.invoke("voices:delete-clip", profile, key),
+    read: (profile: string, key: string): Promise<unknown> => ipcRenderer.invoke("voices:read", profile, key),
+    import: (profile: string, keys: string[]): Promise<unknown> => ipcRenderer.invoke("voices:import", profile, keys),
+    assign: (profile: string, key: string, file: string): Promise<void> => ipcRenderer.invoke("voices:assign", profile, key, file),
+    openFolder: (profile: string): Promise<string> => ipcRenderer.invoke("voices:open", profile),
+    // un clip a changé (fenêtre de réglages) : le guide vocal vide son cache
+    onChanged: (cb: (profile: string) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, profile: string) => cb(profile);
+      ipcRenderer.on("voices:changed", listener);
+      return () => ipcRenderer.removeListener("voices:changed", listener);
+    },
+  },
   version: (): Promise<string> => ipcRenderer.invoke("app:version"),
   updater: {
     status: (): Promise<UpdateStatus> => ipcRenderer.invoke("updater:status"),

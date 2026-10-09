@@ -205,8 +205,10 @@ export interface OverlayState {
   talents: OverlayTalent[];
   next_talent: OverlayTalent | null;
   upcoming_objectives?: number[];
-  alerts: { id: string; text: string; level: "info" | "warning" | "success" | "danger"; voice?: boolean }[];
+  alerts: { id: string; text: string; level: "info" | "warning" | "success" | "danger"; voice?: boolean; voice_key?: string }[];
   tips: string[];
+  /** Mêmes conseils que `tips`, avec la clé de la phrase enregistrée (profils de voix). */
+  tip_items?: { text: string; voice_key?: string }[];
 }
 
 export interface RankEntry { id: number; mode: string; league: string; division: number | null; label: string; recorded_at: string }
