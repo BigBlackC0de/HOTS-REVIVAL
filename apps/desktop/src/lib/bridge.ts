@@ -11,6 +11,8 @@ export interface Regions { clock: Rect; ally: Rect; enemy: Rect }
 export interface ScreenReading { clock: number | null; ally: number | null; enemy: number | null; at: number }
 export interface ScreenConfig { enabled: boolean; regions: Regions }
 
+export interface OverlayPrefs { voice: boolean; displayId: number | null }
+
 /** Pont Electron (preload). Absent quand l'UI tourne dans un navigateur (npm run dev:web). */
 export interface HotsBridge {
   apiBase: string;
@@ -21,6 +23,14 @@ export interface HotsBridge {
   openPath: (target: "logs" | "data") => Promise<string>;
   refreshMeta: (force: boolean) => Promise<{ updated: number; failed: number }>;
   onMetaProgress: (cb: (p: { done: number; total: number; current?: string; finished?: boolean }) => void) => () => void;
+  prefs: {
+    get: () => Promise<OverlayPrefs>;
+    set: (next: Partial<OverlayPrefs>) => Promise<OverlayPrefs>;
+    displays: () => Promise<{ id: number; label: string }[]>;
+    say: (text: string) => Promise<void>;
+  };
+  onSay: (cb: (text: string) => void) => () => void;
+  onPrefs: (cb: (p: OverlayPrefs) => void) => () => void;
   screen: {
     status: () => Promise<{ config: ScreenConfig; last: ScreenReading | null }>;
     save: (cfg: Partial<ScreenConfig>) => Promise<ScreenConfig>;

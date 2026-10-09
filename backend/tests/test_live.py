@@ -191,3 +191,12 @@ def test_player_level_curve_from_replays(db):
             db.add(MatchEvent(match_id=m.id, t_s=t, kind="level", team=0, payload={"level": lvl}))
     db.commit()
     assert level_curve(db) == {4: 122, 10: 382}
+
+
+def test_estimated_talent_tier_is_announced():
+    from app.analytics.timings import DEFAULT_LEVEL_CURVE
+
+    s = LiveSession()
+    s.start("dragon_shire", None, 380, {"level_curve": DEFAULT_LEVEL_CURVE})  # niveau 10 à 396 s
+    ids = [a["id"] for a in s.snapshot()["alerts"]]
+    assert "tier-10" in ids

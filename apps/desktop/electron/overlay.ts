@@ -3,17 +3,41 @@
  * Elle n'interagit jamais avec le processus du jeu : c'est une fenêtre Electron
  * indépendante affichée par-dessus (le jeu doit être en « Plein écran fenêtré »).
  */
-import { BrowserWindow, screen } from "electron";
+import { BrowserWindow, Display, screen } from "electron";
 import path from "node:path";
+import { getPrefs } from "./prefs";
 
 let overlay: BrowserWindow | null = null;
 let interactive = false;
 let hiddenByUser = false;
 let keepOnTop: NodeJS.Timeout | null = null;
 
+const WIDTH = 360;
+
+function targetDisplay(): Display {
+  const id = getPrefs().displayId;
+  return screen.getAllDisplays().find((d) => d.id === id) ?? screen.getPrimaryDisplay();
+}
+
+/** Place l'overlay en haut à droite de l'écran choisi (ex. second écran). */
+export function placeOverlay(): void {
+  if (!overlay) return;
+  const { workArea } = targetDisplay();
+  overlay.setBounds({ x: workArea.x + workArea.width - WIDTH - 16, y: workArea.y + 96, width: WIDTH, height: 560 });
+}
+
+/** Fait lire un message à voix haute par l'overlay. */
+export function say(text: string): void {
+  overlay?.webContents.send("overlay:say", text);
+}
+
+export function sendPrefs(): void {
+  overlay?.webContents.send("overlay:prefs", getPrefs());
+}
+
 export function createOverlay(loadRoute: (win: BrowserWindow, route: string) => void): BrowserWindow {
-  const { workArea } = screen.getPrimaryDisplay();
-  const width = 360;
+  const { workArea } = targetDisplay();
+  const width = WIDTH;
   overlay = new BrowserWindow({
     width,
     height: 560,
@@ -40,6 +64,7 @@ export function createOverlay(loadRoute: (win: BrowserWindow, route: string) => 
   loadRoute(overlay, "/overlay");
   // Affiché d'office : la fenêtre est transparente et vide tant qu'aucune partie n'est en cours.
   overlay.once("ready-to-show", () => overlay?.showInactive());
+  overlay.webContents.on("did-finish-load", () => sendPrefs());
   // Le jeu peut repasser au premier plan : on réaffirme régulièrement la position de l'overlay.
   keepOnTop = setInterval(() => {
     if (overlay && !hiddenByUser) {

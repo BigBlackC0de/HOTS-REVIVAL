@@ -255,7 +255,8 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
         curve = {int(k): v for k, v in (s.timings.get("level_curve") or {}).items()}
         nxt = next((lvl for lvl in TALENT_LEVELS if lvl > ally_level and lvl in curve), None)
         if nxt and clock is not None and 0 < curve[nxt] - clock <= 30:
-            tips.append(f"Palier de talent niveau {nxt} dans ≈ {int(curve[nxt] - clock)} s.")
+            alerts.append({"id": f"tier-{nxt}", "priority": 3, "level": "info",
+                           "text": f"Niveau {nxt} dans ≈ {int(curve[nxt] - clock)} s (estimé)."})
     ally_tier, enemy_tier = talent_tier(ally_level), talent_tier(enemy_level)
     if s.status == "in_game" and not estimated:
         if enemy_tier > ally_tier:

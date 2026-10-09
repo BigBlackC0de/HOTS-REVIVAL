@@ -184,10 +184,15 @@ export async function calibrationCapture(fresh = true): Promise<{ image: string;
 }
 
 /** Raccourci en jeu : mémorise l'écran pour le calibrage (aucun fichier écrit). */
-export async function rememberCapture(): Promise<boolean> {
+export async function rememberCapture(): Promise<"ok" | "black" | "none"> {
   const image = await captureScreen();
-  if (image) lastCapture = image;
-  return Boolean(image);
+  if (!image) return "none";
+  lastCapture = image;
+  // Capture quasi noire : le plein écran exclusif empêche souvent la capture.
+  const small = image.resize({ width: 64 }).toBitmap();
+  let sum = 0;
+  for (let i = 0; i < small.length; i += 4) sum += Math.max(small[i], small[i + 1], small[i + 2]);
+  return sum / (small.length / 4) < 8 ? "black" : "ok";
 }
 
 /** Relit la dernière capture avec des zones candidates (aperçu en direct du calibrage). */

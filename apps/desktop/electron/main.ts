@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, screen, shell } from "electron";
 import * as Sentry from "@sentry/electron/main";
 import path from "node:path";
 import { backendLogPath, ensureBackend, stopBackend } from "./backend";
@@ -8,7 +8,8 @@ import {
 } from "./screenReader";
 import type { Regions } from "./ocr";
 import { checkForUpdates, downloadUpdate, getUpdateStatus, initUpdater, installUpdate } from "./updater";
-import { createOverlay, setInteractive, toggleOverlay } from "./overlay";
+import { createOverlay, placeOverlay, say, sendPrefs, setInteractive, toggleOverlay } from "./overlay";
+import { loadPrefs, savePrefs, type OverlayPrefs } from "./prefs";
 import { registerShortcuts, SHORTCUTS, unregisterShortcuts } from "./shortcuts";
 
 if (process.env.HOTS_SENTRY_DSN) Sentry.init({ dsn: process.env.HOTS_SENTRY_DSN });
@@ -84,6 +85,19 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle("shortcuts:list", () =>
       Object.fromEntries(Object.entries(SHORTCUTS).map(([k, v]) => [k, v.label])),
     );
+    ipcMain.handle("prefs:get", () => loadPrefs());
+    ipcMain.handle("prefs:set", (_e, next: Partial<OverlayPrefs>) => {
+      const p = savePrefs(next);
+      placeOverlay();
+      sendPrefs();
+      return p;
+    });
+    ipcMain.handle("displays:list", () =>
+      screen.getAllDisplays().map((d, i) => ({
+        id: d.id, label: `Écran ${i + 1} (${d.size.width}×${d.size.height})${d.id === screen.getPrimaryDisplay().id ? " – principal" : ""}`,
+      })),
+    );
+    ipcMain.handle("overlay:say", (_e, text: string) => say(String(text)));
     ipcMain.handle("screen:status", () => screenReaderStatus());
     ipcMain.handle("screen:save", (_e, cfg: { enabled?: boolean; regions?: Regions }) => saveConfig(cfg));
     ipcMain.handle("screen:capture", (_e, fresh: boolean) => calibrationCapture(fresh !== false));
@@ -108,6 +122,7 @@ if (!app.requestSingleInstanceLock()) {
       });
     }
     if (mainWindow) loadRoute(mainWindow, "/");
+    loadPrefs();
     createOverlay(loadRoute);
     registerShortcuts();
     onMetaProgress((p) => mainWindow?.webContents.send("meta:progress", p));

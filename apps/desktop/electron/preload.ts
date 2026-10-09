@@ -14,6 +14,22 @@ const api = {
     ipcRenderer.on("meta:progress", listener);
     return () => ipcRenderer.removeListener("meta:progress", listener);
   },
+  prefs: {
+    get: (): Promise<unknown> => ipcRenderer.invoke("prefs:get"),
+    set: (next: unknown): Promise<unknown> => ipcRenderer.invoke("prefs:set", next),
+    displays: (): Promise<unknown> => ipcRenderer.invoke("displays:list"),
+    say: (text: string): Promise<void> => ipcRenderer.invoke("overlay:say", text),
+  },
+  onSay: (cb: (text: string) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, text: string) => cb(text);
+    ipcRenderer.on("overlay:say", listener);
+    return () => ipcRenderer.removeListener("overlay:say", listener);
+  },
+  onPrefs: (cb: (p: unknown) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, p: unknown) => cb(p);
+    ipcRenderer.on("overlay:prefs", listener);
+    return () => ipcRenderer.removeListener("overlay:prefs", listener);
+  },
   screen: {
     status: (): Promise<unknown> => ipcRenderer.invoke("screen:status"),
     save: (cfg: unknown): Promise<unknown> => ipcRenderer.invoke("screen:save", cfg),
