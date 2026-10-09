@@ -55,6 +55,7 @@ export async function refreshMeta(force = false): Promise<{ updated: number; fai
   let updated = 0;
   let failed = 0;
   const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: true } });
+  win.webContents.setAudioMuted(true);
   try {
     const pages = await json<PendingPage[]>(`/api/meta/pending${force ? "?force=true" : ""}`);
     for (const [i, page] of pages.entries()) {
