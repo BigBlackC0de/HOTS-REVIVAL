@@ -14,6 +14,7 @@ from app.analytics.timings import map_timings
 from app.api import coach, draft, live, matches, meta, profile, reference, replays, settings as settings_api
 from app.config import Settings, get_settings
 from app.db import SessionLocal, create_schema, init_engine
+from app.safekeeping import archive_existing, backup_database
 from app.events import hub
 from app.live.battlelobby import LobbyInfo, LobbyWatcher, learn_map
 from app.live.game_process import GameProcessMonitor
@@ -108,6 +109,10 @@ def create_app(settings: Settings | None = None, start_watchers: bool = True) ->
         init_observability(settings)
         init_engine(settings.resolved_database_url())
         create_schema()
+        backup_database(settings.resolved_database_url())
+        with SessionLocal() as db:
+            archive_existing(db)
+            db.commit()
         hub.bind_loop(asyncio.get_running_loop())
         app.state.start_watchers = start_watchers
         global _lobby_watcher, _replay_dirs

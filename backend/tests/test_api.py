@@ -111,6 +111,45 @@ def test_reanalyze_keeps_ai_summaries(client):
     assert client.get(f"/api/matches/{new_id}/report").json()["ai_summary"]["summary"]
 
 
+def test_ai_summary_survives_lost_match_and_rank_kept(client, db):
+    from app.models import Match, Replay, Report
+
+    client.post("/api/replays/import", json={})
+    client.post("/api/profile/ranks", json={"league": "Argent", "division": 3})
+    match_id = client.get("/api/matches").json()[0]["id"]
+    summary = client.post(f"/api/matches/{match_id}/report/ai").json()["ai_summary"]
+    # partie effacée (ex. réanalyse interrompue) : l'analyse payée revient au réimport
+    for m in db.query(Match).all():
+        db.query(Report).filter(Report.match_id == m.id).delete()
+        db.delete(m)
+    db.query(Replay).delete()
+    db.commit()
+    assert client.post("/api/replays/import", json={}).json()["imported"] == 1
+    new_id = client.get("/api/matches").json()[0]["id"]
+    assert client.get(f"/api/matches/{new_id}/report").json()["ai_summary"] == summary
+    client.post("/api/replays/reanalyze")
+    assert client.get("/api/profile/ranks").json()["history"][0]["league"] == "Argent"
+
+
+def test_database_backup_keeps_last_copies(tmp_path, monkeypatch):
+    import sqlite3
+
+    from app import safekeeping
+
+    src = tmp_path / "hots.db"
+    with sqlite3.connect(src) as c:
+        c.execute("create table rank_snapshots (league text)")
+        c.execute("insert into rank_snapshots values ('Argent')")
+    monkeypatch.setattr(safekeeping, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr(safekeeping, "BACKUPS_KEPT", 2)
+    for i in range(3):
+        (tmp_path / "backups").mkdir(exist_ok=True)
+        (tmp_path / "backups" / f"hots-2020010{i}-000000.db").write_bytes(b"")
+    dest = safekeeping.backup_database(f"sqlite:///{src.as_posix()}")
+    with sqlite3.connect(dest) as c:
+        assert c.execute("select league from rank_snapshots").fetchone() == ("Argent",)
+    assert len(list((tmp_path / "backups").glob("hots-*.db"))) == 2
+
 def test_key_moments_sorted_by_time():
     from app.analytics.report import fmt_clock
 

@@ -15,6 +15,7 @@ from app.draft.engine import analyze_draft
 from app.models import HerosScore, Match, MatchEvent, MatchPlayer, Player, Replay, Report
 from app.replay.extractor import ParsedMatch, extract_match
 from app.replay.parser import file_sha256, read_replay
+from app.safekeeping import restore_summary
 
 log = logging.getLogger(__name__)
 
@@ -122,5 +123,7 @@ def persist_match(db: Session, replay: Replay, parsed: ParsedMatch, me_toons: Co
     for mp in rows:
         if mp.is_me:
             db.refresh(mp)
-            db.add(Report(match_id=match.id, match_player_id=mp.id, facts=build_facts(match, mp)))
+            report = Report(match_id=match.id, match_player_id=mp.id, facts=build_facts(match, mp))
+            restore_summary(db, report, match.replay.file_hash)  # analyse IA déjà payée : récupérée
+            db.add(report)
     return match

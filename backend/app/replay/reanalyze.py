@@ -1,7 +1,7 @@
 """Réanalyse de l'historique quand l'analyseur évolue (ex. nouveaux évènements de carte).
 
-Les résumés IA déjà générés sont conservés (rattachés par empreinte du replay) pour ne
-pas repayer d'appels à Claude.
+Les résumés IA déjà générés sont archivés en base (app/safekeeping.py) et rattachés
+automatiquement à la partie réimportée : aucun appel à Claude n'est repayé.
 """
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ import logging
 from pathlib import Path
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from app.config import data_dir
 from app.db import SessionLocal
 from app.models import Match, Replay, Report
+from app.safekeeping import archive_existing
 
 log = logging.getLogger(__name__)
 
@@ -36,19 +36,10 @@ def mark_done() -> None:
     _marker().write_text(str(ANALYSIS_VERSION))
 
 
-def _snapshot_summaries(db: Session) -> dict[str, tuple[dict, str | None]]:
-    rows = db.execute(
-        select(Replay.file_hash, Report.ai_summary, Report.model)
-        .join(Match, Match.replay_id == Replay.id)
-        .join(Report, Report.match_id == Match.id)
-        .where(Report.ai_summary.is_not(None))
-    )
-    return {h: (summary, model) for h, summary, model in rows}
-
-
 def reanalyze_all(importer) -> dict:  # importer: ReplayImporter
     with SessionLocal() as db:
-        summaries = _snapshot_summaries(db)
+        kept = archive_existing(db)  # en base avant tout effacement : survit à un plantage
+        db.commit()
         files = [Path(p) for p in db.scalars(select(Replay.file_path))]
         for match in db.scalars(select(Match)):
             db.query(Report).filter(Report.match_id == match.id).delete()
@@ -62,15 +53,6 @@ def reanalyze_all(importer) -> dict:  # importer: ReplayImporter
             imported += 1
     importer.scan()  # nouveaux replays éventuels
 
-    with SessionLocal() as db:
-        for file_hash, (summary, model) in summaries.items():
-            report = db.scalar(
-                select(Report).join(Match, Match.id == Report.match_id)
-                .join(Replay, Replay.id == Match.replay_id).where(Replay.file_hash == file_hash)
-            )
-            if report:
-                report.ai_summary, report.model = summary, model
-        db.commit()
     mark_done()
     log.info("Réanalyse terminée : %s parties", imported)
-    return {"reanalyzed": imported, "kept_ai_summaries": len(summaries)}
+    return {"reanalyzed": imported, "kept_ai_summaries": kept}

@@ -8,8 +8,9 @@ from app.coach.client import CoachUnavailable, coach_available, deterministic_su
 from app.coach.context import player_context
 from app.config import Settings, app_settings
 from app.db import get_db
-from app.models import Match, MatchPlayer, Report
+from app.models import Match, MatchPlayer, Replay, Report
 from app.observability import track
+from app.safekeeping import archive_summary
 from app.schemas import MatchDetailOut, MatchPlayerOut, MatchSummaryOut, ReportOut
 
 router = APIRouter(prefix="/matches", tags=["parties"])
@@ -84,6 +85,9 @@ async def generate_report(
     if summary is None:
         summary, model = deterministic_summary(r.facts), "deterministic"
     r.ai_summary, r.model = summary.model_dump(), model
+    replay = db.scalar(select(Replay).join(Match, Match.replay_id == Replay.id).where(Match.id == match_id))
+    if replay:
+        archive_summary(db, replay.file_hash, r.ai_summary, model)
     db.commit()
     track("report_generated", {"model": model})
     return ReportOut(match_id=match_id, facts=r.facts, ai_summary=r.ai_summary, model=r.model)

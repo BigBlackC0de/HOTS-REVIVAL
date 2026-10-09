@@ -160,6 +160,18 @@ class Report(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class SavedAnalysis(Base):
+    """Résumé IA archivé par empreinte du replay : jamais supprimé (voir app/safekeeping.py)."""
+
+    __tablename__ = "saved_analyses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    ai_summary: Mapped[dict] = mapped_column(JSONType)
+    model: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Draft(Base):
     __tablename__ = "drafts"
 
