@@ -4,8 +4,9 @@ import { clock } from "../lib/format";
 
 const ZONES: { key: keyof Regions; label: string; color: string }[] = [
   { key: "clock", label: "Horloge", color: "#f5c451" },
-  { key: "ally", label: "Niveau allié", color: "#46a8ff" },
-  { key: "enemy", label: "Niveau adverse", color: "#f43f5e" },
+  // zones gauche/droite : l'équipe (allié = bleu, adverse = rose) se déduit de la couleur du chiffre
+  { key: "ally", label: "Niveau de gauche", color: "#46a8ff" },
+  { key: "enemy", label: "Niveau de droite", color: "#f43f5e" },
 ];
 
 /** Activation et calibrage de la lecture d'écran (horloge + niveaux d'équipe). */
@@ -66,7 +67,7 @@ export function ScreenCalibration() {
       <p className="text-xs text-slate-400">
         Activée par défaut. L'horloge et les niveaux sont repérés tout seuls en haut de l'écran du jeu ; seules ces
         petites zones publiques sont lues (jamais la mini-carte), sans rien enregistrer ni envoyer au jeu, avec un flux
-        d'écran léger qui ne fait pas ramer. Zones actuelles : <b>{cfg.regionsSource === "manuel" ? "placées à la main" : cfg.regionsSource === "auto" ? "repérées automatiquement" : "par défaut (repérage à la première partie)"}</b>.
+        d'écran léger qui ne fait pas ramer. Zones actuelles : <b>{cfg.regionsSource === "manuel" ? "placées à la main" : cfg.regionsSource === "auto" ? "horloge repérée automatiquement, niveaux d'après le HUD" : "par défaut, d'après le HUD"}</b>.
         Si la lecture échoue : en jeu, appuyez sur <b>Ctrl+Shift+K</b>, puis revenez ici et cliquez sur « Utiliser la
         capture faite en jeu » pour placer les zones à la main.
       </p>

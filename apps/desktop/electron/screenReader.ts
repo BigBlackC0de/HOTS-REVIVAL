@@ -2,7 +2,8 @@
  * Lecture d'écran (activée par défaut, désactivable) : pendant une partie, un flux vidéo
  * léger de l'écran du jeu (2 images/s) fournit trois petites zones publiques du HUD
  * (horloge, niveau allié, niveau adverse), lues par OCR local. L'OCR n'est relancé que si
- * une zone a changé. Les zones sont repérées automatiquement. Rien d'autre n'est lu (jamais
+ * une zone a changé. L'horloge est repérée automatiquement ; les niveaux suivent la géométrie
+ * fixe du HUD et l'équipe se déduit de leur couleur (bleu = la vôtre, rose = l'adversaire). Rien d'autre n'est lu (jamais
  * la mini-carte), aucune image n'est conservée, aucune touche n'est envoyée au jeu.
  */
 import { app, desktopCapturer, nativeImage, NativeImage } from "electron";
@@ -12,7 +13,8 @@ import { createWorker, PSM, Worker } from "tesseract.js";
 import { BACKEND_URL } from "./backend";
 import { captureError, gameDisplay, grab, startCapture, stopCapture, type Crop } from "./capture";
 import {
-  allyOnRight, binarize, blueness, DEFAULT_REGIONS, HUD_BAND, LEGACY_DEFAULT_REGIONS, levelRule, locateHud, parseClock, parseLevel, Rect, Regions, signature, Stabilizer,
+  allyOnRight, assignLevels, binarize, DEFAULT_REGIONS, HUD_BAND, hudRegions, LEGACY_DEFAULT_REGIONS, levelImage, levelMask, levelRule, levelTint, locateClock,
+  parseClock, parseLevel, Rect, Regions, signature, Stabilizer, teamColor, type LevelRead, type TeamColor,
 } from "./ocr";
 
 export type RegionsSource = "défaut" | "auto" | "manuel";
@@ -20,14 +22,14 @@ export interface ScreenReaderConfig { enabled: boolean; regions: Regions; region
 export interface ScreenReading { clock: number | null; ally: number | null; enemy: number | null; at: number }
 export type ReaderState = "off" | "idle" | "starting" | "searching" | "partial" | "ok" | "black" | "error";
 
-const CONFIG_VERSION = 4;
+const CONFIG_VERSION = 5;
 const DEBUG = Boolean(process.env.HOTS_SCREEN_DEBUG);
 const INTERVAL_MS = 1000;
 const CLOCK_EVERY_TICKS = 3; // horloge déjà calée : vérification toutes les 3 s suffit
 const LOCATE_AFTER_MISSES = 4;
 const LOCATE_COOLDOWN_MS = 8000;
-// Côté de votre équipe : 3 lectures concordantes pour le fixer, puis verrouillé (il ne change
-// jamais en cours de partie ; l'animation de montée de niveau change la couleur des chiffres).
+// Côté de votre équipe : 3 lectures concordantes (un chiffre bleu ET l'autre rose) pour le fixer,
+// puis verrouillé pour la partie (l'animation de montée de niveau change la couleur des chiffres).
 const SIDE_VOTES_TO_SET = 3;
 const SIDE_VOTES_TO_FLIP = 20;
 let config: ScreenReaderConfig = { enabled: true, regions: DEFAULT_REGIONS, regionsSource: "défaut", version: CONFIG_VERSION };
@@ -60,7 +62,7 @@ export function loadConfig(): ScreenReaderConfig {
     config = { ...config, ...saved };
     if (saved.version !== CONFIG_VERSION) {
       // passage à la lecture automatique : activée, seules les zones vraiment placées à la main sont conservées
-      // (v4 : les zones « auto » d'avant pouvaient viser les portraits -> retour aux zones par défaut)
+      // (v5 : les zones de niveau « auto » d'avant étaient mal placées ou trop étroites -> géométrie fixe du HUD)
       const manual = saved.regionsSource === "manuel"
         || (!saved.regionsSource && saved.regions && JSON.stringify(saved.regions) !== JSON.stringify(LEGACY_DEFAULT_REGIONS));
       config.enabled = true;
@@ -73,6 +75,15 @@ export function loadConfig(): ScreenReaderConfig {
     /* première utilisation */
   }
   return config;
+}
+
+/**
+ * Zones lues : celles placées à la main, sinon la géométrie fixe du HUD pour les niveaux
+ * (jamais déplacées par le repérage, qui ne retrouve que l'horloge).
+ */
+function activeRegions(aspect: number): Regions {
+  if (config.regionsSource === "manuel") return config.regions;
+  return { ...hudRegions(aspect), clock: config.regions.clock };
 }
 
 function persist(): void {
@@ -185,6 +196,16 @@ function binarizedCrop(crop: Crop, threshold = 150): { bin: Buffer; png: () => B
   return { bin, png: () => nativeImage.createFromBitmap(bin, { width: crop.width, height: crop.height }).toPNG() };
 }
 
+/** Chiffre de niveau isolé (sans halo ni décor) et sa couleur d'équipe. */
+function levelCrop(crop: Crop): { bin: Buffer; png: () => Buffer; color: TeamColor | null } {
+  const mask = levelMask(crop.data, crop.width, crop.height);
+  const img = levelImage(mask, crop.width, crop.height);
+  return {
+    bin: img.data, color: teamColor(levelTint(crop.data, mask)),
+    png: () => nativeImage.createFromBitmap(img.data, { width: img.width, height: img.height }).toPNG(),
+  };
+}
+
 function cropImage(image: NativeImage, r: Rect): Crop {
   const { width, height } = image.getSize();
   const crop = image.crop({
@@ -202,12 +223,17 @@ async function ocrPng(png: Buffer): Promise<string> {
   return data.text.trim();
 }
 
-export async function readImage(image: NativeImage, regions: Regions = config.regions): Promise<ScreenReading> {
-  const read = (r: Rect) => ocrPng(binarizedCrop(cropImage(image, r)).png());
+export async function readImage(image: NativeImage, regions?: Regions): Promise<ScreenReading> {
+  const { width, height } = image.getSize();
+  const r = regions ?? activeRegions(width / height);
+  const level = async (rect: Rect): Promise<LevelRead> => {
+    const c = levelCrop(cropImage(image, rect));
+    return { value: parseLevel(await ocrPng(c.png())), color: c.color };
+  };
+  const left = await level(r.ally), right = await level(r.enemy);
   return {
-    clock: parseClock(await read(regions.clock)),
-    ally: parseLevel(await read(regions.ally)),
-    enemy: parseLevel(await read(regions.enemy)),
+    clock: parseClock(await ocrPng(binarizedCrop(cropImage(image, r.clock)).png())),
+    ...assignLevels(allyOnRight(left.color, right.color), left, right),
     at: Date.now(),
   };
 }
@@ -220,9 +246,8 @@ async function post(pathname: string, body: unknown): Promise<void> {
   }).catch(() => undefined);
 }
 
-/** Lit une zone ; l'OCR n'est relancé que si son contenu a changé. */
-async function readCrop(key: string, crop: Crop, parse: (t: string) => number | null): Promise<number | null> {
-  const { bin, png } = binarizedCrop(crop);
+/** Lit une zone (déjà binarisée) ; l'OCR n'est relancé que si son contenu a changé. */
+async function readCrop(key: string, { bin, png }: { bin: Buffer; png: () => Buffer }, parse: (t: string) => number | null): Promise<number | null> {
   const sig = signature(bin);
   const hit = cache.get(key);
   if (hit && hit.sig === sig) return hit.value;
@@ -231,7 +256,7 @@ async function readCrop(key: string, crop: Crop, parse: (t: string) => number | 
   return value;
 }
 
-/** Repérage automatique de l'horloge et des niveaux dans la bande du haut de l'écran. */
+/** Repérage automatique de l'horloge dans la bande du haut de l'écran. */
 async function locate(): Promise<boolean> {
   lastLocateAt = Date.now();
   const g = await grab([HUD_BAND], 2);
@@ -241,22 +266,22 @@ async function locate(): Promise<boolean> {
   for (const threshold of [150, 200, 110]) {
     const { png } = binarizedCrop(band, threshold);
     await w.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
-    let found: Partial<Regions> = {};
+    let found: Rect | null = null;
     try {
       const { data } = await w.recognize(png(), {}, { blocks: true, text: true });
       if (DEBUG) {
         console.log("[écran] repérage", threshold, JSON.stringify((data.words ?? []).map((x) => [x.text, x.bbox])));
         fs.writeFileSync(path.join(app.getPath("userData"), `band${threshold}.png`), png());
       }
-      found = locateHud(data.words ?? [], band.width, band.height);
+      found = locateClock(data.words ?? [], band.width, band.height);
     } finally {
       await w.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
     }
-    if (found.clock) {
-      config = { ...config, regions: { ...config.regions, ...found }, regionsSource: "auto" };
+    if (found) {
+      config = { ...config, regions: { ...config.regions, clock: found }, regionsSource: "auto" };
       persist();
       cache.clear();
-      console.log("[écran] HUD repéré", JSON.stringify(found));
+      console.log("[écran] horloge repérée", JSON.stringify(found));
       return true;
     }
   }
@@ -303,7 +328,9 @@ async function tick(): Promise<void> {
     } else if (textWorker) {
       releaseTextWorker();
     }
-    const g = await grab([config.regions.clock, config.regions.ally, config.regions.enemy]);
+    const { width: sw, height: sh } = gameDisplay().size;
+    const regions = activeRegions(sw / sh);
+    const g = await grab([regions.clock, regions.ally, regions.enemy]);
     if (!g) return;
     if (g.black) {
       if (++blackCount >= 3) state = "black";
@@ -314,7 +341,8 @@ async function tick(): Promise<void> {
     const clockFresh = Date.now() - clockSyncedAt < 15000;
     const readClock = !clockFresh || tickCount % CLOCK_EVERY_TICKS === 0;
     // Votre équipe n'est pas toujours à gauche : son niveau est bleu, celui de l'adversaire rose.
-    const side = allyOnRight(blueness(g.crops[1].data), blueness(g.crops[2].data));
+    const lc = levelCrop(g.crops[1]), rc = levelCrop(g.crops[2]);
+    const side = allyOnRight(lc.color, rc.color);
     if (side !== null) {
       sideVotes = side === sideVote ? sideVotes + 1 : 1;
       sideVote = side;
@@ -325,18 +353,17 @@ async function tick(): Promise<void> {
         enemy.reset();
       }
     }
-    const left = await readCrop("left", g.crops[1], parseLevel);
-    const right = await readCrop("right", g.crops[2], parseLevel);
+    const left = await readCrop("left", lc, parseLevel);
+    const right = await readCrop("right", rc, parseLevel);
     const reading: ScreenReading = {
-      clock: readClock ? await readCrop("clock", g.crops[0], parseClock) : null,
-      ally: allySide === null ? null : allySide ? right : left,
-      enemy: allySide === null ? null : allySide ? left : right,
+      clock: readClock ? await readCrop("clock", binarizedCrop(g.crops[0]), parseClock) : null,
+      ...assignLevels(allySide, { value: left, color: lc.color }, { value: right, color: rc.color }),
       at: Date.now(),
     };
     lastReading = reading;
     if (DEBUG) {
-      console.log("[écran]", state, JSON.stringify(reading), config.regionsSource);
-      g.crops.forEach((c, i) => fs.writeFileSync(path.join(app.getPath("userData"), `crop${i}.png`), binarizedCrop(c).png()));
+      console.log("[écran]", state, JSON.stringify(reading), config.regionsSource, lc.color, rc.color, allySide);
+      [binarizedCrop(g.crops[0]), lc, rc].forEach((c, i) => fs.writeFileSync(path.join(app.getPath("userData"), `crop${i}.png`), c.png()));
     }
 
     // Horloge : deux lectures cohérentes avec le temps écoulé avant de synchroniser.
@@ -356,18 +383,17 @@ async function tick(): Promise<void> {
       await post("levels", { ally: ally.value ?? undefined, enemy: enemy.value ?? undefined, source: "écran" });
     }
 
-    // Zones à retrouver si l'horloge OU les niveaux restent illisibles quelques secondes.
+    // Horloge à retrouver si elle reste illisible quelques secondes (les zones de niveau sont fixes).
     const clockOk = reading.clock !== null || clockFresh;
     const levelsOk = left !== null && right !== null;
-    misses = clockOk && levelsOk ? 0 : misses + 1;
+    misses = clockOk ? 0 : misses + 1;
     if (clockOk) {
       lastOkAt = reading.at;
       state = levelsOk || (ally.value !== null && enemy.value !== null) ? "ok" : "partial";
     } else if (misses >= LOCATE_AFTER_MISSES) {
       state = "searching";
     }
-    if (misses >= LOCATE_AFTER_MISSES && config.regionsSource !== "manuel"
-        && Date.now() - lastLocateAt > LOCATE_COOLDOWN_MS * (clockOk ? 3 : 1)) {
+    if (misses >= LOCATE_AFTER_MISSES && config.regionsSource !== "manuel" && Date.now() - lastLocateAt > LOCATE_COOLDOWN_MS) {
       if (await locate()) misses = 0;
     }
   } catch (err) {

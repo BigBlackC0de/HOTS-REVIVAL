@@ -8,7 +8,7 @@ import path from "node:path";
 import type { Rect } from "./ocr";
 import { loadPrefs } from "./prefs";
 
-export interface Crop { width: number; height: number; data: Buffer }
+export interface Crop { width: number; height: number; data: Buffer } // pixels BGRA
 export interface Grab { black: boolean; width: number; height: number; crops: Crop[] }
 
 const FPS = 2;
@@ -30,9 +30,19 @@ ipcMain.on("capture:frame", (_e, msg: { id: number; ok: boolean; black?: boolean
   }
   resolve({
     black: Boolean(msg.black), width: msg.width ?? 0, height: msg.height ?? 0,
-    crops: msg.crops.map((c) => ({ width: c.width, height: c.height, data: Buffer.from(c.data.buffer, c.data.byteOffset, c.data.byteLength) })),
+    crops: msg.crops.map((c) => ({ width: c.width, height: c.height, data: toBgra(Buffer.from(c.data.buffer, c.data.byteOffset, c.data.byteLength)) })),
   });
 });
+
+/** Le canvas renvoie du RGBA ; tout le reste (NativeImage, ocr.ts) attend du BGRA comme toBitmap(). */
+function toBgra(rgba: Buffer): Buffer {
+  for (let i = 0; i < rgba.length; i += 4) {
+    const r = rgba[i];
+    rgba[i] = rgba[i + 2];
+    rgba[i + 2] = r;
+  }
+  return rgba;
+}
 
 ipcMain.on("capture:started", (_e, msg: { ok: boolean; error?: string }) => {
   if (!msg.ok) lastError = msg.error ?? "capture refusée";
