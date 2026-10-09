@@ -1,28 +1,47 @@
 /**
- * Lecture d'écran (opt-in) : toutes les 2 s pendant une partie, capture l'écran principal,
- * découpe trois petites zones publiques du HUD (horloge, niveau allié, niveau adverse)
- * et les lit par OCR local. Rien d'autre n'est lu (jamais la mini-carte), aucune image
- * n'est conservée, aucune touche n'est envoyée au jeu.
+ * Lecture d'écran (activée par défaut, désactivable) : pendant une partie, un flux vidéo
+ * léger de l'écran du jeu (2 images/s) fournit trois petites zones publiques du HUD
+ * (horloge, niveau allié, niveau adverse), lues par OCR local. L'OCR n'est relancé que si
+ * une zone a changé. Les zones sont repérées automatiquement. Rien d'autre n'est lu (jamais
+ * la mini-carte), aucune image n'est conservée, aucune touche n'est envoyée au jeu.
  */
-import { app, desktopCapturer, nativeImage, NativeImage, screen } from "electron";
+import { app, desktopCapturer, nativeImage, NativeImage } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { createWorker, PSM, Worker } from "tesseract.js";
 import { BACKEND_URL } from "./backend";
-import { binarize, DEFAULT_REGIONS, levelRule, parseClock, parseLevel, Rect, Regions, Stabilizer } from "./ocr";
+import { captureError, gameDisplay, grab, startCapture, stopCapture, type Crop } from "./capture";
+import {
+  binarize, DEFAULT_REGIONS, HUD_BAND, levelRule, locateHud, parseClock, parseLevel, Rect, Regions, signature, Stabilizer,
+} from "./ocr";
 
-export interface ScreenReaderConfig { enabled: boolean; regions: Regions }
+export type RegionsSource = "défaut" | "auto" | "manuel";
+export interface ScreenReaderConfig { enabled: boolean; regions: Regions; regionsSource: RegionsSource; version?: number }
 export interface ScreenReading { clock: number | null; ally: number | null; enemy: number | null; at: number }
+export type ReaderState = "off" | "idle" | "starting" | "searching" | "partial" | "ok" | "black" | "error";
 
-const INTERVAL_MS = 2000;
-let config: ScreenReaderConfig = { enabled: false, regions: DEFAULT_REGIONS };
+const CONFIG_VERSION = 2;
+const DEBUG = Boolean(process.env.HOTS_SCREEN_DEBUG);
+const INTERVAL_MS = 1000;
+const CLOCK_EVERY_TICKS = 3; // horloge déjà calée : vérification toutes les 3 s suffit
+const LOCATE_AFTER_MISSES = 4;
+const LOCATE_COOLDOWN_MS = 8000;
+let config: ScreenReaderConfig = { enabled: true, regions: DEFAULT_REGIONS, regionsSource: "défaut", version: CONFIG_VERSION };
 let worker: Worker | null = null;
 let timer: NodeJS.Timeout | null = null;
 let busy = false;
+let state: ReaderState = "off";
 let lastGameId: number | null = null;
 let lastClock: { value: number; at: number } | null = null;
+let clockSyncedAt = 0;
+let tickCount = 0;
+let misses = 0;
+let blackCount = 0;
+let lastLocateAt = 0;
 let lastReading: ScreenReading | null = null;
+let lastOkAt: number | null = null;
 let lastCapture: NativeImage | null = null;
+const cache = new Map<string, { sig: string; value: number | null }>();
 const ally = new Stabilizer(levelRule);
 const enemy = new Stabilizer(levelRule);
 
@@ -30,16 +49,32 @@ const configPath = () => path.join(app.getPath("userData"), "screen-reader.json"
 
 export function loadConfig(): ScreenReaderConfig {
   try {
-    config = { ...config, ...JSON.parse(fs.readFileSync(configPath(), "utf-8")) };
+    const saved = JSON.parse(fs.readFileSync(configPath(), "utf-8"));
+    config = { ...config, ...saved };
+    if (saved.version !== CONFIG_VERSION) {
+      // passage à la lecture automatique : activée, zones manuelles conservées
+      config.enabled = true;
+      config.regionsSource = saved.regions ? "manuel" : "défaut";
+      config.version = CONFIG_VERSION;
+    }
   } catch {
     /* première utilisation */
   }
   return config;
 }
 
+function persist(): void {
+  try {
+    fs.writeFileSync(configPath(), JSON.stringify(config, null, 2));
+  } catch (err) {
+    console.warn("[écran] configuration non enregistrée", err);
+  }
+}
+
 export function saveConfig(next: Partial<ScreenReaderConfig>): ScreenReaderConfig {
   config = { ...config, ...next, regions: { ...config.regions, ...(next.regions ?? {}) } };
-  fs.writeFileSync(configPath(), JSON.stringify(config, null, 2));
+  if (next.regions) config.regionsSource = next.regionsSource ?? "manuel";
+  persist();
   restart();
   return config;
 }
@@ -75,8 +110,9 @@ async function getWorker(): Promise<Worker> {
   return worker;
 }
 
+/** Capture complète ponctuelle (calibrage manuel uniquement). */
 export async function captureScreen(): Promise<NativeImage | null> {
-  const display = screen.getPrimaryDisplay();
+  const display = gameDisplay();
   const { width, height } = display.size;
   const sf = display.scaleFactor;
   const sources = await desktopCapturer.getSources({
@@ -87,7 +123,12 @@ export async function captureScreen(): Promise<NativeImage | null> {
   return source && !source.thumbnail.isEmpty() ? source.thumbnail : null;
 }
 
-function cropForOcr(image: NativeImage, r: Rect): NativeImage {
+function binarizedCrop(crop: Crop, threshold = 150): { bin: Buffer; png: () => Buffer } {
+  const bin = binarize(crop.data, threshold);
+  return { bin, png: () => nativeImage.createFromBitmap(bin, { width: crop.width, height: crop.height }).toPNG() };
+}
+
+function cropImage(image: NativeImage, r: Rect): Crop {
   const { width, height } = image.getSize();
   const crop = image.crop({
     x: Math.round(r.x * width), y: Math.round(r.y * height),
@@ -95,21 +136,21 @@ function cropForOcr(image: NativeImage, r: Rect): NativeImage {
   });
   const size = crop.getSize();
   const big = crop.resize({ width: size.width * 3, height: size.height * 3, quality: "best" });
-  const bigSize = big.getSize();
-  return nativeImage.createFromBitmap(binarize(big.toBitmap()), bigSize);
+  return { ...big.getSize(), data: big.toBitmap() };
 }
 
-async function ocr(image: NativeImage, r: Rect): Promise<string> {
+async function ocrPng(png: Buffer): Promise<string> {
   const w = await getWorker();
-  const { data } = await w.recognize(cropForOcr(image, r).toPNG());
+  const { data } = await w.recognize(png);
   return data.text.trim();
 }
 
 export async function readImage(image: NativeImage, regions: Regions = config.regions): Promise<ScreenReading> {
+  const read = (r: Rect) => ocrPng(binarizedCrop(cropImage(image, r)).png());
   return {
-    clock: parseClock(await ocr(image, regions.clock)),
-    ally: parseLevel(await ocr(image, regions.ally)),
-    enemy: parseLevel(await ocr(image, regions.enemy)),
+    clock: parseClock(await read(regions.clock)),
+    ally: parseLevel(await read(regions.ally)),
+    enemy: parseLevel(await read(regions.enemy)),
     at: Date.now(),
   };
 }
@@ -122,34 +163,122 @@ async function post(pathname: string, body: unknown): Promise<void> {
   }).catch(() => undefined);
 }
 
+/** Lit une zone ; l'OCR n'est relancé que si son contenu a changé. */
+async function readCrop(key: string, crop: Crop, parse: (t: string) => number | null): Promise<number | null> {
+  const { bin, png } = binarizedCrop(crop);
+  const sig = signature(bin);
+  const hit = cache.get(key);
+  if (hit && hit.sig === sig) return hit.value;
+  const value = parse(await ocrPng(png()));
+  cache.set(key, { sig, value });
+  return value;
+}
+
+/** Repérage automatique de l'horloge et des niveaux dans la bande du haut de l'écran. */
+async function locate(): Promise<boolean> {
+  lastLocateAt = Date.now();
+  const g = await grab([HUD_BAND], 2);
+  if (!g || g.black) return false;
+  const band = g.crops[0];
+  const w = await getWorker();
+  for (const threshold of [150, 200, 110]) {
+    const { png } = binarizedCrop(band, threshold);
+    await w.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
+    let found: Partial<Regions> = {};
+    try {
+      const { data } = await w.recognize(png(), {}, { blocks: true, text: true });
+      if (DEBUG) {
+        console.log("[écran] repérage", threshold, JSON.stringify((data.words ?? []).map((x) => [x.text, x.bbox])));
+        fs.writeFileSync(path.join(app.getPath("userData"), `band${threshold}.png`), png());
+      }
+      found = locateHud(data.words ?? [], band.width, band.height);
+    } finally {
+      await w.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
+    }
+    if (found.clock) {
+      config = { ...config, regions: { ...config.regions, ...found }, regionsSource: "auto" };
+      persist();
+      cache.clear();
+      console.log("[écran] HUD repéré", JSON.stringify(found));
+      return true;
+    }
+  }
+  return false;
+}
+
 async function tick(): Promise<void> {
   if (busy) return;
   busy = true;
   try {
-    const state = await fetch(`${BACKEND_URL}/api/live/state`).then((r) => r.json()).catch(() => null);
-    if (!state || !["loading", "in_game"].includes(state.status)) return;
-    if (state.game_id !== lastGameId) {
-      lastGameId = state.game_id;
+    const live = await fetch(`${BACKEND_URL}/api/live/state`).then((r) => r.json()).catch(() => null);
+    if (!live || !["loading", "in_game"].includes(live.status)) {
+      if (state !== "idle") stopCapture();
+      state = "idle";
+      return;
+    }
+    if (live.game_id !== lastGameId) {
+      lastGameId = live.game_id;
       ally.reset();
       enemy.reset();
+      cache.clear();
       lastClock = null;
+      clockSyncedAt = 0;
+      misses = blackCount = 0;
     }
-    const image = await captureScreen();
-    if (!image) return;
-    lastCapture = image;
-    const reading = await readImage(image);
+    if (!(await startCapture())) {
+      state = "error";
+      return;
+    }
+    if (state === "idle" || state === "error") state = "starting";
+    tickCount++;
+    const g = await grab([config.regions.clock, config.regions.ally, config.regions.enemy]);
+    if (!g) return;
+    if (g.black) {
+      if (++blackCount >= 3) state = "black";
+      return;
+    }
+    blackCount = 0;
+
+    const clockFresh = Date.now() - clockSyncedAt < 15000;
+    const readClock = !clockFresh || tickCount % CLOCK_EVERY_TICKS === 0;
+    const reading: ScreenReading = {
+      clock: readClock ? await readCrop("clock", g.crops[0], parseClock) : null,
+      ally: await readCrop("ally", g.crops[1], parseLevel),
+      enemy: await readCrop("enemy", g.crops[2], parseLevel),
+      at: Date.now(),
+    };
     lastReading = reading;
+    if (DEBUG) {
+      console.log("[écran]", state, JSON.stringify(reading), config.regionsSource);
+      g.crops.forEach((c, i) => fs.writeFileSync(path.join(app.getPath("userData"), `crop${i}.png`), binarizedCrop(c).png()));
+    }
 
     // Horloge : deux lectures cohérentes avec le temps écoulé avant de synchroniser.
     if (reading.clock !== null) {
       if (lastClock && Math.abs(reading.clock - lastClock.value - (reading.at - lastClock.at) / 1000) <= 3) {
         await post("sync", { clock_s: reading.clock, source: "écran" });
+        clockSyncedAt = reading.at;
       }
       lastClock = { value: reading.clock, at: reading.at };
     }
     const a = ally.push(reading.ally);
     const e = enemy.push(reading.enemy);
     if (a !== null || e !== null) await post("levels", { ally: a ?? undefined, enemy: e ?? undefined, source: "écran" });
+
+    // Zones à retrouver si l'horloge OU les niveaux restent illisibles quelques secondes.
+    const clockOk = reading.clock !== null || clockFresh;
+    const levelsOk = reading.ally !== null && reading.enemy !== null;
+    misses = clockOk && levelsOk ? 0 : misses + 1;
+    if (clockOk) {
+      lastOkAt = reading.at;
+      state = levelsOk || (ally.value !== null && enemy.value !== null) ? "ok" : "partial";
+    } else if (misses >= LOCATE_AFTER_MISSES) {
+      state = "searching";
+    }
+    if (misses >= LOCATE_AFTER_MISSES && config.regionsSource !== "manuel"
+        && Date.now() - lastLocateAt > LOCATE_COOLDOWN_MS * (clockOk ? 3 : 1)) {
+      if (await locate()) misses = 0;
+    }
   } catch (err) {
     console.warn("[écran] lecture impossible", err);
   } finally {
@@ -160,6 +289,12 @@ async function tick(): Promise<void> {
 function restart(): void {
   if (timer) clearInterval(timer);
   timer = config.enabled ? setInterval(() => void tick(), INTERVAL_MS) : null;
+  if (!config.enabled) {
+    stopCapture();
+    state = "off";
+  } else if (state === "off") {
+    state = "idle";
+  }
 }
 
 export function startScreenReader(): void {
@@ -170,6 +305,7 @@ export function startScreenReader(): void {
 export function stopScreenReader(): void {
   if (timer) clearInterval(timer);
   timer = null;
+  stopCapture();
   void worker?.terminate();
   worker = null;
 }
@@ -200,6 +336,10 @@ export async function testRegions(regions: Regions): Promise<ScreenReading | nul
   return lastCapture ? readImage(lastCapture, regions) : null;
 }
 
-export function screenReaderStatus(): { config: ScreenReaderConfig; last: ScreenReading | null } {
-  return { config, last: lastReading };
+export interface ScreenReaderStatus {
+  config: ScreenReaderConfig; last: ScreenReading | null; state: ReaderState; lastOkAt: number | null; error: string | null;
+}
+
+export function screenReaderStatus(): ScreenReaderStatus {
+  return { config, last: lastReading, state, lastOkAt, error: state === "error" ? captureError() : null };
 }

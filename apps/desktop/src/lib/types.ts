@@ -203,7 +203,7 @@ export interface OverlayState {
   talents: OverlayTalent[];
   next_talent: OverlayTalent | null;
   upcoming_objectives?: number[];
-  alerts: { id: string; text: string; level: "info" | "warning" | "success" | "danger" }[];
+  alerts: { id: string; text: string; level: "info" | "warning" | "success" | "danger"; voice?: boolean }[];
   tips: string[];
 }
 

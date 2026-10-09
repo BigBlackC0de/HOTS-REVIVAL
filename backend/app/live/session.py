@@ -138,21 +138,37 @@ class LiveSession:
             return est, est
         return self.ally_level, self.enemy_level
 
+    def plausible_level(self, level: int) -> bool:
+        """Une première lecture d'écran doit rester proche de la courbe d'XP (anti-erreur d'OCR)."""
+        if self.clock_source in (None, "estimée") or self.clock() is None:
+            return True
+        return abs(level - self.estimated_level()) <= 5
+
     def set_levels(self, ally: int | None, enemy: int | None, source: str = "manuel") -> None:
         with self._lock:
+            if source == "écran" and self.level_source != "écran":
+                if ally is not None and not self.plausible_level(ally):
+                    ally = None
+                if enemy is not None and not self.plausible_level(enemy):
+                    enemy = None
+                if ally is None and enemy is None:
+                    return
             if self.level_source == "estimée":  # première vraie valeur : on part de l'estimation
                 self.ally_level = self.enemy_level = self.estimated_level()
+                # première vraie valeur : c'est la référence, rien à annoncer
+                self.ally_level = max(1, min(30, ally)) if ally is not None else self.ally_level
+                self.enemy_level = max(1, min(30, enemy)) if enemy is not None else self.enemy_level
             if ally is not None:
                 ally = max(1, min(30, ally))
-                for lvl in (10, 16, 20):
-                    if self.ally_level < lvl <= ally:
-                        self._flash_locked(f"ally-{lvl}", f"Niveau {lvl} atteint.", "success")
+                crossed = [lvl for lvl in TALENT_LEVELS[1:] if self.ally_level < lvl <= ally]
+                if crossed:  # un seul message, même si plusieurs paliers d'un coup
+                    self._flash_locked(f"ally-{crossed[-1]}", f"Niveau {crossed[-1]} atteint.", "success")
                 self.ally_level = ally
             if enemy is not None:
                 enemy = max(1, min(30, enemy))
-                for lvl in (10, 16, 20):
-                    if self.enemy_level < lvl <= enemy:
-                        self._flash_locked(f"enemy-{lvl}", f"L'équipe adverse atteint le niveau {lvl}.", "danger")
+                crossed = [lvl for lvl in (10, 16, 20) if self.enemy_level < lvl <= enemy]
+                if crossed:
+                    self._flash_locked(f"enemy-{crossed[-1]}", f"L'équipe adverse atteint le niveau {crossed[-1]}.", "danger")
                 self.enemy_level = enemy
             self.level_source = source if source in LEVEL_SOURCES else "manuel"
 
@@ -264,12 +280,7 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
     ally_level, enemy_level = s.ally_level, s.enemy_level
     estimated = s.level_source == "estimée"
     if estimated:  # ni lecture d'écran ni saisie : courbe d'XP typique (pas d'avantage calculable)
-        ally_level = enemy_level = s.estimated_level()
-        curve = {int(k): v for k, v in (s.timings.get("level_curve") or {}).items()}
-        nxt = next((lvl for lvl in TALENT_LEVELS if lvl > ally_level and lvl in curve), None)
-        if nxt and clock is not None and 0 < curve[nxt] - clock <= 30:
-            alerts.append({"id": f"tier-{nxt}", "priority": 3, "level": "info",
-                           "text": f"Niveau {nxt} dans ≈ {int(curve[nxt] - clock)} s (estimé)."})
+        ally_level = enemy_level = s.estimated_level()  # affiché « ≈ », jamais annoncé
     ally_tier, enemy_tier = talent_tier(ally_level), talent_tier(enemy_level)
     if s.status == "in_game" and not estimated:
         if enemy_tier > ally_tier:
@@ -281,7 +292,8 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
             tips.append(f"Avantage niveau {lvl} : forcez l'objectif ou un combat.")
         if ally_level in (9, 15, 19):
             tips.append(f"Niveau {ally_level + 1} imminent : attendez le talent avant d'engager.")
-        if objective and objective["next_in_s"] is not None and 0 < objective["next_in_s"] <= OBJECTIVE_WARNING_S:
+        if (objective and objective["next_in_s"] is not None and 0 < objective["next_in_s"] <= OBJECTIVE_WARNING_S
+                and s.clock_source != "estimée"):
             tips.append("Restez groupés.")
 
     now = time.monotonic()
@@ -291,6 +303,10 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
         else:
             alerts.append({"id": key, "priority": 0, "level": level, "text": text})
     alerts.sort(key=lambda a: a["priority"])
+    # Le guide vocal n'annonce que ce qui est observé (écran, saisie) : jamais une horloge devinée.
+    sure_clock = s.clock_source not in (None, "estimée")
+    for a in alerts:
+        a["voice"] = a["id"] in s._flashes or sure_clock
 
     # Talent à venir (le plus utile en jeu) + build complet
     next_talent = None
@@ -319,7 +335,7 @@ def compute_overlay(s: LiveSession) -> dict[str, Any]:
         "next_talent": next_talent,
         "alerts": alerts[:MAX_ALERTS],
         "tips": tips[:2],
-        "sources": ["game_process", "battlelobby_file", "user_input", "static_data", "own_history"],
+        "sources": ["game_process", "battlelobby_file", "screen_reading", "user_input", "static_data", "own_history"],
     }
 
 

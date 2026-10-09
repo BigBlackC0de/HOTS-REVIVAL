@@ -9,7 +9,9 @@ export interface UpdateStatus {
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Regions { clock: Rect; ally: Rect; enemy: Rect }
 export interface ScreenReading { clock: number | null; ally: number | null; enemy: number | null; at: number }
-export interface ScreenConfig { enabled: boolean; regions: Regions }
+export interface ScreenConfig { enabled: boolean; regions: Regions; regionsSource?: "défaut" | "auto" | "manuel" }
+export type ReaderState = "off" | "idle" | "starting" | "searching" | "partial" | "ok" | "black" | "error";
+export interface ScreenStatus { config: ScreenConfig; last: ScreenReading | null; state: ReaderState; lastOkAt: number | null; error: string | null }
 
 export interface OverlayPrefs {
   voice: boolean;
@@ -42,7 +44,7 @@ export interface HotsBridge {
   onSay: (cb: (text: string) => void) => () => void;
   onPrefs: (cb: (p: OverlayPrefs) => void) => () => void;
   screen: {
-    status: () => Promise<{ config: ScreenConfig; last: ScreenReading | null }>;
+    status: () => Promise<ScreenStatus>;
     save: (cfg: Partial<ScreenConfig>) => Promise<ScreenConfig>;
     capture: (fresh: boolean) => Promise<{ image: string; reading: ScreenReading } | null>;
     test: (regions: Regions) => Promise<ScreenReading | null>;

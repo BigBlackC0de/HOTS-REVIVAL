@@ -27,7 +27,8 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
 async function gameInProgress(): Promise<boolean> {
   try {
     const s = await json<{ status: string; game_running: boolean }>("/api/live/state");
-    return s.status === "loading" || s.status === "in_game";
+    // jamais pendant que le jeu est ouvert (même dans les menus) : pages lourdes = saccades
+    return s.game_running || s.status === "loading" || s.status === "in_game";
   } catch {
     return false;
   }
@@ -54,7 +55,7 @@ export async function refreshMeta(force = false): Promise<{ updated: number; fai
   running = true;
   let updated = 0;
   let failed = 0;
-  const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: true } });
+  const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: true, images: false } });
   win.webContents.setAudioMuted(true);
   try {
     const pages = await json<PendingPage[]>(`/api/meta/pending${force ? "?force=true" : ""}`);

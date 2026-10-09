@@ -22,6 +22,10 @@ export async function isBackendUp(): Promise<boolean> {
   }
 }
 
+export function backendPid(): number | undefined {
+  return child?.pid;
+}
+
 export function backendLogPath(): string {
   return path.join(app.getPath("userData"), "backend.log");
 }

@@ -5,7 +5,7 @@ import { Card, Empty, List } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import { useLiveState } from "../hooks/liveContext";
 import { api } from "../lib/api";
-import { bridge, type OverlayPrefs } from "../lib/bridge";
+import { bridge, type OverlayPrefs, type ReaderState, type ScreenStatus } from "../lib/bridge";
 import { speak } from "../lib/voice";
 import { clock, pct } from "../lib/format";
 import type { HeroMeta, LobbyPlayer, OverlayState } from "../lib/types";
@@ -51,11 +51,39 @@ function Levels({ s, act }: { s: OverlayState; act: (p: Promise<OverlayState>) =
         <button className="btn-ghost justify-center py-1" onClick={() => act(api.live.levels({ enemy_delta: -1 }))}>Adv. −1</button>
       </div>
       <p className="mt-2 text-xs text-slate-500">
-        {estimated ? "Estimation d'après la courbe d'XP habituelle. Lecture d'écran (Paramètres) ou Ctrl+Shift+PageUp/PageDown pour les vrais niveaux."
+        {estimated ? "≈ estimation affichée en attendant la lecture de l'écran (jamais annoncée par la voix)."
           : `Source : ${s.levels.source}`}
       </p>
+      <ScreenReaderBadge />
     </Card>
   );
+}
+
+const READER_TEXT: Record<ReaderState, [string, string]> = {
+  off: ["text-slate-500", "Lecture de l'écran désactivée (Paramètres)."],
+  idle: ["text-slate-400", "Lecture de l'écran : en attente de la partie."],
+  starting: ["text-slate-400", "Lecture de l'écran : démarrage…"],
+  searching: ["text-gold-300", "Recherche de l'horloge et des niveaux en haut de l'écran du jeu…"],
+  partial: ["text-gold-300", "✓ Horloge lue à l'écran. Recherche des niveaux d'équipe…"],
+  ok: ["text-emerald-300", "✓ Horloge et niveaux lus à l'écran en direct."],
+  black: ["text-rose-300", "L'écran du jeu est capturé tout noir. Clic droit sur HeroesOfTheStorm_x64.exe → Propriétés → Compatibilité → décochez « Désactiver les optimisations du plein écran »."],
+  error: ["text-rose-300", "Capture de l'écran du jeu impossible."],
+};
+
+/** État de la lecture de l'écran (horloge + niveaux). */
+function ScreenReaderBadge() {
+  const b = bridge();
+  const [status, setStatus] = useState<ScreenStatus | null>(null);
+  useEffect(() => {
+    if (!b) return;
+    const load = () => void b.screen.status().then(setStatus);
+    load();
+    const id = setInterval(load, 2000);
+    return () => clearInterval(id);
+  }, [b]);
+  if (!status) return null;
+  const [tone, text] = READER_TEXT[status.state] ?? READER_TEXT.idle;
+  return <p className={`mt-2 text-xs ${tone}`}>{text}{status.error ? ` (${status.error})` : ""}</p>;
 }
 
 function HeroCard({ s, heroes, act }: { s: OverlayState; heroes: Parameters<typeof HeroSelect>[0]["heroes"]; act: (p: Promise<OverlayState>) => void }) {

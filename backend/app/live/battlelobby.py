@@ -163,7 +163,10 @@ def read_lobby_file(path: Path) -> LobbyInfo:
 def find_lobby_files(temp_dir: Path) -> list[Path]:
     if not temp_dir.is_dir():
         return []
-    return [p for p in temp_dir.glob(f"**/{BATTLELOBBY_NAME}") if p.is_file()]
+    # pas de recherche récursive (appelée chaque seconde) : le fichier est toujours
+    # dans TempWriteReplayP*\ directement sous le dossier temporaire du jeu
+    found = list(temp_dir.glob(f"*/{BATTLELOBBY_NAME}")) + list(temp_dir.glob(BATTLELOBBY_NAME))
+    return [p for p in found if p.is_file()]
 
 
 class LobbyWatcher:

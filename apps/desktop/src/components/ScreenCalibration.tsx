@@ -61,12 +61,14 @@ export function ScreenCalibration() {
     <div className="space-y-3 text-sm">
       <label className="flex items-center gap-3">
         <input type="checkbox" checked={cfg.enabled} onChange={(e) => void toggle(e.target.checked)} />
-        <span>Lire automatiquement l'horloge et les niveaux d'équipe à l'écran pendant les parties</span>
+        <span>Lire automatiquement l'horloge et les niveaux d'équipe à l'écran pendant les parties (recommandé)</span>
       </label>
       <p className="text-xs text-slate-400">
-        Seules trois petites zones publiques du haut de l'écran sont lues (jamais la mini-carte), toutes les 2 secondes,
-        sans rien enregistrer ni envoyer au jeu. Si la lecture échoue : en jeu, appuyez sur <b>Ctrl+Shift+K</b>, puis
-        revenez ici et cliquez sur « Utiliser la capture faite en jeu » pour placer les zones.
+        Activée par défaut. L'horloge et les niveaux sont repérés tout seuls en haut de l'écran du jeu ; seules ces
+        petites zones publiques sont lues (jamais la mini-carte), sans rien enregistrer ni envoyer au jeu, avec un flux
+        d'écran léger qui ne fait pas ramer. Zones actuelles : <b>{cfg.regionsSource === "manuel" ? "placées à la main" : cfg.regionsSource === "auto" ? "repérées automatiquement" : "par défaut (repérage à la première partie)"}</b>.
+        Si la lecture échoue : en jeu, appuyez sur <b>Ctrl+Shift+K</b>, puis revenez ici et cliquez sur « Utiliser la
+        capture faite en jeu » pour placer les zones à la main.
       </p>
       <div className="flex flex-wrap gap-2">
         <button className="btn-ghost" onClick={() => void capture(false)}>Utiliser la capture faite en jeu</button>
@@ -76,7 +78,10 @@ export function ScreenCalibration() {
             <span className="h-2 w-2 rounded-full" style={{ background: z.color }} /> {z.label}
           </button>
         ))}
-        <button className="btn-primary ml-auto" onClick={() => void save()}>Enregistrer les zones</button>
+        {cfg.regionsSource === "manuel" && (
+          <button className="btn-ghost ml-auto" onClick={() => void b.screen.save({ regionsSource: "défaut" }).then(setCfg)}>Repérage automatique</button>
+        )}
+        <button className={`btn-primary ${cfg.regionsSource === "manuel" ? "" : "ml-auto"}`} onClick={() => void save()}>Enregistrer les zones</button>
       </div>
       {message && <div className="text-gold-300">{message}</div>}
       {reading && (

@@ -34,9 +34,10 @@ export function useVoiceGuide(state: OverlayState | null) {
       activeAlerts.current.clear();
       tipSaidAt.current.clear();
     }
-    const current = new Set(state.alerts.map((a) => a.id));
+    const current = new Set(state.alerts.filter((a) => a.voice !== false).map((a) => a.id));
     if (p.voice) {
-      for (const a of state.alerts) if (!activeAlerts.current.has(a.id)) speak(a.text, p);
+      // seules les infos observées sont annoncées (jamais une estimation)
+      for (const a of state.alerts) if (a.voice !== false && !activeAlerts.current.has(a.id)) speak(a.text, p);
       if (p.tips && state.status === "in_game") {
         const now = Date.now();
         for (const tip of state.tips) {

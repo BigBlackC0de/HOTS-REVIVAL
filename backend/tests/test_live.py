@@ -13,7 +13,8 @@ def test_overlay_objective_and_powerspikes():
     s = LiveSession()
     s.on_lobby(["A#1"], "towers_of_doom", "appris", "abc", TOD)
     s.start(None, "valla", clock_s=120)
-    s.set_levels(ally=9, enemy=10)
+    s.set_levels(ally=9, enemy=9)  # première saisie : référence, rien d'annoncé
+    s.set_levels(ally=None, enemy=10)
     snap = s.snapshot()
     assert snap["status"] == "in_game" and snap["map_id"] == "towers_of_doom"
     assert 25 <= snap["objective"]["next_in_s"] <= 31
@@ -36,6 +37,7 @@ def test_alerts_never_accumulate():
 def test_flash_alerts_expire(monkeypatch):
     s = LiveSession()
     s.start("dragon_shire", None, 300)
+    s.set_levels(ally=9, enemy=None)
     s.set_levels(ally=10, enemy=None)
     assert any(a["text"] == "Niveau 10 atteint." for a in s.snapshot()["alerts"])
     real = time.monotonic
@@ -193,10 +195,32 @@ def test_player_level_curve_from_replays(db):
     assert level_curve(db) == {4: 122, 10: 382}
 
 
-def test_estimated_talent_tier_is_announced():
+def test_estimates_are_never_spoken():
     from app.analytics.timings import DEFAULT_LEVEL_CURVE
 
     s = LiveSession()
-    s.start("dragon_shire", None, 380, {"level_curve": DEFAULT_LEVEL_CURVE})  # niveau 10 à 396 s
-    ids = [a["id"] for a in s.snapshot()["alerts"]]
-    assert "tier-10" in ids
+    s.start("dragon_shire", None, 380, {"level_curve": DEFAULT_LEVEL_CURVE, "first_objective_s": 400,
+                                        "objective_interval_s": 180})
+    s.clock_source = "estimée"  # horloge devinée depuis le chargement
+    alerts = s.snapshot()["alerts"]
+    assert not any(a["id"].startswith("tier-") for a in alerts)  # plus de « niveau X dans ≈ N s »
+    assert alerts and all(a["voice"] is False for a in alerts)  # objectif affiché mais pas annoncé
+    s.sync_clock(382, "écran")
+    assert all(a["voice"] for a in s.snapshot()["alerts"])
+
+
+def test_screen_levels_first_reading_is_silent_and_filtered():
+    from app.analytics.timings import DEFAULT_LEVEL_CURVE
+
+    s = LiveSession()
+    s.start("dragon_shire", None, 0, {"level_curve": DEFAULT_LEVEL_CURVE})
+    s.sync_clock(400, "écran")  # niveau ~10 attendu
+    s.set_levels(ally=1, enemy=None, source="écran")  # erreur d'OCR invraisemblable : ignorée
+    assert s.snapshot()["levels"]["source"] == "estimée"
+    s.set_levels(ally=9, enemy=10, source="écran")  # première vraie lecture : rien d'annoncé
+    snap = s.snapshot()
+    assert snap["levels"]["ally"] == 9 and snap["levels"]["enemy"] == 10
+    assert not any(a["id"].startswith(("ally-", "enemy-")) for a in snap["alerts"])
+    s.set_levels(ally=10, enemy=None, source="écran")
+    alerts = {a["id"]: a for a in s.snapshot()["alerts"]}
+    assert alerts["ally-10"]["voice"] and alerts["ally-10"]["text"] == "Niveau 10 atteint."

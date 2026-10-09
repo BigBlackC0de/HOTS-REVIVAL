@@ -75,3 +75,50 @@ export class Stabilizer {
 // ensuite un niveau ne baisse jamais et ne saute pas de plus de 3.
 export const levelRule = (prev: number | null, next: number): boolean =>
   prev === null ? next >= 1 && next <= 30 : next >= prev && next - prev <= 3;
+
+/** Empreinte d'une zone binarisée : si elle ne change pas, inutile de relancer l'OCR. */
+export function signature(bin: Buffer): string {
+  let h = 2166136261;
+  for (let i = 0; i < bin.length; i += 4) h = Math.imul(h ^ bin[i], 16777619);
+  return `${bin.length}:${h >>> 0}`;
+}
+
+export interface OcrWord { text: string; bbox: { x0: number; y0: number; x1: number; y1: number } }
+
+/** Bande du haut de l'écran où se trouvent l'horloge et les niveaux d'équipe. */
+export const HUD_BAND: Rect = { x: 0.25, y: 0, w: 0.5, h: 0.1 };
+
+/**
+ * Repère automatiquement l'horloge (m:ss, la plus proche du centre) et les niveaux
+ * d'équipe (nombres 1-30 juste à gauche et à droite) dans la bande du haut.
+ * `width`/`height` : taille en pixels de l'image de la bande analysée.
+ */
+export function locateHud(words: OcrWord[], width: number, height: number, band: Rect = HUD_BAND): Partial<Regions> {
+  const frac = (b: OcrWord["bbox"], padX: number, padY: number): Rect => {
+    const w = b.x1 - b.x0, h = b.y1 - b.y0;
+    const x0 = Math.max(0, b.x0 - w * padX), y0 = Math.max(0, b.y0 - h * padY);
+    const x1 = Math.min(width, b.x1 + w * padX), y1 = Math.min(height, b.y1 + h * padY);
+    return { x: band.x + (x0 / width) * band.w, y: band.y + (y0 / height) * band.h, w: ((x1 - x0) / width) * band.w, h: ((y1 - y0) / height) * band.h };
+  };
+  const clocks = words.filter((w) => /^\d{1,2}[:.]\d{2}$/.test(w.text.trim()) && parseClock(w.text) !== null);
+  if (!clocks.length) return {};
+  const cx = width / 2;
+  const center = (w: OcrWord) => (w.bbox.x0 + w.bbox.x1) / 2;
+  const clockWord = clocks.sort((a, b) => Math.abs(center(a) - cx) - Math.abs(center(b) - cx))[0];
+  const cb = clockWord.bbox;
+  const ch = cb.y1 - cb.y0, cy = (cb.y0 + cb.y1) / 2;
+  const levels = words.filter((w) => {
+    const t = w.text.trim();
+    if (!/^\d{1,2}$/.test(t) || Number(t) < 1 || Number(t) > 30) return false;
+    return Math.abs((w.bbox.y0 + w.bbox.y1) / 2 - cy) <= ch * 3;
+  });
+  const near = (side: "left" | "right") => levels
+    .filter((w) => (side === "left" ? w.bbox.x1 <= cb.x0 : w.bbox.x0 >= cb.x1))
+    .sort((a, b) => Math.abs(center(a) - center(clockWord)) - Math.abs(center(b) - center(clockWord)))[0];
+  const out: Partial<Regions> = { clock: frac(cb, 0.25, 0.35) };
+  const ally = near("left"), enemy = near("right");
+  // la zone d'un niveau doit pouvoir contenir 2 chiffres (9 -> 10)
+  if (ally) out.ally = frac(ally.bbox, 0.8, 0.35);
+  if (enemy) out.enemy = frac(enemy.bbox, 0.8, 0.35);
+  return out;
+}

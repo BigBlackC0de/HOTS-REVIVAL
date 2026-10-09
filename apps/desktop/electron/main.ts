@@ -1,10 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, screen, shell } from "electron";
 import * as Sentry from "@sentry/electron/main";
+import os from "node:os";
 import path from "node:path";
-import { backendLogPath, ensureBackend, stopBackend } from "./backend";
+import { backendLogPath, backendPid, ensureBackend, stopBackend } from "./backend";
 import { onMetaProgress, refreshMeta, scheduleMetaRefresh } from "./meta";
 import {
-  calibrationCapture, saveConfig, screenReaderStatus, startScreenReader, stopScreenReader, testRegions,
+  calibrationCapture, saveConfig, screenReaderStatus, startScreenReader, stopScreenReader, testRegions, type ScreenReaderConfig,
 } from "./screenReader";
 import type { Regions } from "./ocr";
 import { checkForUpdates, downloadUpdate, getUpdateStatus, initUpdater, installUpdate } from "./updater";
@@ -51,6 +52,21 @@ function createMainWindow(): BrowserWindow {
   void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(SPLASH)}`);
   win.webContents.on("did-finish-load", () => win.webContents.send("overlay:prefs", loadPrefs()));
   return win;
+}
+
+/** Priorité basse pour tous les processus de l'application : le jeu passe toujours en premier. */
+const lowered = new Set<number>();
+function lowerPriority(): void {
+  const pids = [process.pid, backendPid(), ...app.getAppMetrics().map((m) => m.pid)];
+  for (const pid of pids) {
+    if (!pid || lowered.has(pid)) continue;
+    try {
+      os.setPriority(pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
+      lowered.add(pid);
+    } catch {
+      /* processus déjà terminé */
+    }
+  }
 }
 
 // Une seule instance : un double-clic sur le raccourci ramène la fenêtre existante.
@@ -115,7 +131,7 @@ if (!app.requestSingleInstanceLock()) {
     );
     ipcMain.handle("overlay:say", (_e, text: string) => say(String(text)));
     ipcMain.handle("screen:status", () => screenReaderStatus());
-    ipcMain.handle("screen:save", (_e, cfg: { enabled?: boolean; regions?: Regions }) => saveConfig(cfg));
+    ipcMain.handle("screen:save", (_e, cfg: Partial<ScreenReaderConfig>) => saveConfig(cfg));
     ipcMain.handle("screen:capture", (_e, fresh: boolean) => calibrationCapture(fresh !== false));
     ipcMain.handle("screen:test", (_e, regions: Regions) => testRegions(regions));
     ipcMain.handle("app:version", () => app.getVersion());
@@ -129,6 +145,8 @@ if (!app.requestSingleInstanceLock()) {
     );
 
     const ok = await ensureBackend();
+    lowerPriority();
+    setInterval(lowerPriority, 15_000); // nouveaux processus (capture, méta…)
     if (!ok) {
       await dialog.showMessageBox({
         type: "error",
