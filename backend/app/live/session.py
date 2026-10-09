@@ -135,8 +135,11 @@ class LiveSession:
 
     def plausible_level(self, level: int) -> bool:
         """Une première lecture d'écran doit rester proche de la courbe d'XP (anti-erreur d'OCR)."""
-        if self.clock_source is None or self.clock() is None or not self.timings.get("level_curve"):
+        if not self.timings.get("level_curve"):
             return True
+        if self.clock_source is None or self.clock() is None:
+            return False  # horloge pas encore lue : l'écran renverra la valeur une fois calé
+
         return abs(level - self.estimated_level()) <= 5
 
     def set_levels(self, ally: int | None, enemy: int | None, source: str = "manuel") -> None:

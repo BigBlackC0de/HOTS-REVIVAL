@@ -15,7 +15,10 @@ function pickVoice(name?: string | null): SpeechSynthesisVoice | null {
 export function speak(text: string, opts: VoiceOptions = {}): void {
   const synth = window.speechSynthesis;
   if (!synth) return;
-  const u = new SpeechSynthesisUtterance(text.replace(/≈/g, "environ").replace(/\bs\b/g, "secondes"));
+  // « 30 s » -> « 30 secondes » : seulement après un nombre (\b ignore les accents : « groupés » cassait)
+  const spoken = text.replace(/≈/g, "environ")
+    .replace(/(\d+)\s?s(?![\p{L}\d])/gu, (_, n: string) => `${n} seconde${n === "1" || n === "0" ? "" : "s"}`);
+  const u = new SpeechSynthesisUtterance(spoken);
   const voice = pickVoice(opts.voiceName);
   if (voice) u.voice = voice;
   u.lang = voice?.lang ?? "fr-FR";

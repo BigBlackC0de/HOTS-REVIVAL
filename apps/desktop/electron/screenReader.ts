@@ -12,7 +12,7 @@ import { createWorker, PSM, Worker } from "tesseract.js";
 import { BACKEND_URL } from "./backend";
 import { captureError, gameDisplay, grab, startCapture, stopCapture, type Crop } from "./capture";
 import {
-  binarize, DEFAULT_REGIONS, HUD_BAND, levelRule, locateHud, parseClock, parseLevel, Rect, Regions, signature, Stabilizer,
+  allyOnRight, binarize, blueness, DEFAULT_REGIONS, HUD_BAND, LEGACY_DEFAULT_REGIONS, levelRule, locateHud, parseClock, parseLevel, Rect, Regions, signature, Stabilizer,
 } from "./ocr";
 
 export type RegionsSource = "défaut" | "auto" | "manuel";
@@ -20,7 +20,7 @@ export interface ScreenReaderConfig { enabled: boolean; regions: Regions; region
 export interface ScreenReading { clock: number | null; ally: number | null; enemy: number | null; at: number }
 export type ReaderState = "off" | "idle" | "starting" | "searching" | "partial" | "ok" | "black" | "error";
 
-const CONFIG_VERSION = 2;
+const CONFIG_VERSION = 3;
 const DEBUG = Boolean(process.env.HOTS_SCREEN_DEBUG);
 const INTERVAL_MS = 1000;
 const CLOCK_EVERY_TICKS = 3; // horloge déjà calée : vérification toutes les 3 s suffit
@@ -44,6 +44,9 @@ let lastCapture: NativeImage | null = null;
 const cache = new Map<string, { sig: string; value: number | null }>();
 const ally = new Stabilizer(levelRule);
 const enemy = new Stabilizer(levelRule);
+let allySide: boolean | null = null; // true = votre équipe (bleue) à droite du HUD
+let sideVote: boolean | null = null;
+let sideVotes = 0;
 
 const configPath = () => path.join(app.getPath("userData"), "screen-reader.json");
 
@@ -52,10 +55,14 @@ export function loadConfig(): ScreenReaderConfig {
     const saved = JSON.parse(fs.readFileSync(configPath(), "utf-8"));
     config = { ...config, ...saved };
     if (saved.version !== CONFIG_VERSION) {
-      // passage à la lecture automatique : activée, zones manuelles conservées
+      // passage à la lecture automatique : activée, seules les zones vraiment placées à la main sont conservées
+      const manual = saved.regionsSource === "manuel"
+        || (!saved.regionsSource && saved.regions && JSON.stringify(saved.regions) !== JSON.stringify(LEGACY_DEFAULT_REGIONS));
       config.enabled = true;
-      config.regionsSource = saved.regions ? "manuel" : "défaut";
+      config.regionsSource = manual ? "manuel" : "défaut";
+      if (!manual) config.regions = DEFAULT_REGIONS;
       config.version = CONFIG_VERSION;
+      persist();
     }
   } catch {
     /* première utilisation */
@@ -267,6 +274,8 @@ async function tick(): Promise<void> {
       ally.reset();
       enemy.reset();
       cache.clear();
+      allySide = sideVote = null;
+      sideVotes = 0;
       lastClock = null;
       clockSyncedAt = 0;
       misses = blackCount = 0;
@@ -294,10 +303,24 @@ async function tick(): Promise<void> {
 
     const clockFresh = Date.now() - clockSyncedAt < 15000;
     const readClock = !clockFresh || tickCount % CLOCK_EVERY_TICKS === 0;
+    // Votre équipe n'est pas toujours à gauche : son niveau est bleu, celui de l'adversaire rose.
+    const side = allyOnRight(blueness(g.crops[1].data), blueness(g.crops[2].data));
+    if (side !== null) {
+      sideVotes = side === sideVote ? sideVotes + 1 : 1;
+      sideVote = side;
+      if (sideVotes >= 3 && side !== allySide) {
+        if (allySide !== null) console.log("[écran] côté de l'équipe corrigé", side ? "droite" : "gauche");
+        allySide = side;
+        ally.reset();
+        enemy.reset();
+      }
+    }
+    const left = await readCrop("left", g.crops[1], parseLevel);
+    const right = await readCrop("right", g.crops[2], parseLevel);
     const reading: ScreenReading = {
       clock: readClock ? await readCrop("clock", g.crops[0], parseClock) : null,
-      ally: await readCrop("ally", g.crops[1], parseLevel),
-      enemy: await readCrop("enemy", g.crops[2], parseLevel),
+      ally: allySide === null ? null : allySide ? right : left,
+      enemy: allySide === null ? null : allySide ? left : right,
       at: Date.now(),
     };
     lastReading = reading;
@@ -325,7 +348,7 @@ async function tick(): Promise<void> {
 
     // Zones à retrouver si l'horloge OU les niveaux restent illisibles quelques secondes.
     const clockOk = reading.clock !== null || clockFresh;
-    const levelsOk = reading.ally !== null && reading.enemy !== null;
+    const levelsOk = left !== null && right !== null;
     misses = clockOk && levelsOk ? 0 : misses + 1;
     if (clockOk) {
       lastOkAt = reading.at;

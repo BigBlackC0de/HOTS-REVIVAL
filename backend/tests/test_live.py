@@ -206,3 +206,16 @@ def test_screen_levels_first_reading_is_silent_and_filtered():
     s.set_levels(ally=10, enemy=None, source="écran")
     alerts = {a["id"]: a for a in s.snapshot()["alerts"]}
     assert alerts["ally-10"]["voice"] and alerts["ally-10"]["text"] == "Niveau 10 atteint."
+
+
+def test_screen_levels_ignored_before_clock_is_read():
+    from app.analytics.timings import DEFAULT_LEVEL_CURVE
+
+    s = LiveSession()
+    s.start("hanamura_temple", None, 0, {"level_curve": DEFAULT_LEVEL_CURVE})
+    s.clock_source = None  # écran de chargement : horloge pas encore lue
+    s.set_levels(ally=9, enemy=None, source="écran")  # zone mal placée : ignorée
+    assert s.snapshot()["levels"] is None
+    s.sync_clock(40, "écran")
+    s.set_levels(ally=1, enemy=2, source="écran")
+    assert s.snapshot()["levels"]["ally"] == 1

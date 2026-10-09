@@ -9,6 +9,13 @@ export interface Regions { clock: Rect; ally: Rect; enemy: Rect }
 /** Zones par défaut (haut-centre du HUD) ; à ajuster via le calibrage si la lecture échoue. */
 export const DEFAULT_REGIONS: Regions = {
   clock: { x: 0.475, y: 0.0, w: 0.05, h: 0.035 },
+  ally: { x: 0.447, y: 0.02, w: 0.035, h: 0.045 },
+  enemy: { x: 0.517, y: 0.02, w: 0.035, h: 0.045 },
+};
+
+/** Anciennes zones par défaut (mal placées) : ne doivent pas être prises pour un calibrage manuel. */
+export const LEGACY_DEFAULT_REGIONS: Regions = {
+  clock: { x: 0.475, y: 0.0, w: 0.05, h: 0.035 },
   ally: { x: 0.415, y: 0.0, w: 0.035, h: 0.05 },
   enemy: { x: 0.55, y: 0.0, w: 0.035, h: 0.05 },
 };
@@ -26,6 +33,26 @@ export function binarize(bgra: Buffer, threshold = 150): Buffer {
     out[i + 3] = 255;
   }
   return out;
+}
+
+/**
+ * Teinte des chiffres clairs d'une zone BGRA : moyenne de (bleu - rouge). Le niveau de
+ * votre équipe est bleuté (> 0), celui de l'adversaire rose (< 0). null si trop peu de pixels.
+ */
+export function blueness(bgra: Buffer, threshold = 150): number | null {
+  let n = 0, sum = 0;
+  for (let i = 0; i < bgra.length; i += 4) {
+    if (Math.max(bgra[i], bgra[i + 1], bgra[i + 2]) < threshold) continue;
+    n++;
+    sum += bgra[i] - bgra[i + 2];
+  }
+  return n >= 50 ? sum / n : null;
+}
+
+/** Votre équipe (bleue) est à droite du HUD ? null si les couleurs ne tranchent pas. */
+export function allyOnRight(left: number | null, right: number | null, margin = 40): boolean | null {
+  if (left === null || right === null || Math.abs(left - right) < margin) return null;
+  return right > left;
 }
 
 export function parseClock(text: string): number | null {
