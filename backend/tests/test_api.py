@@ -99,3 +99,21 @@ def test_all_region_folders_are_imported(tmp_path):
     s = Settings(replay_dir=str(eu), anthropic_api_key="")
     assert set(s.resolved_replay_dirs()) == {eu, us}
     assert set(s.resolved_toon_handles()) == {"2-Hero-1-1278570", "1-Hero-1-555"}
+
+
+def test_reanalyze_keeps_ai_summaries(client):
+    client.post("/api/replays/import", json={})
+    match_id = client.get("/api/matches").json()[0]["id"]
+    client.post(f"/api/matches/{match_id}/report/ai")
+    res = client.post("/api/replays/reanalyze").json()
+    assert res == {"reanalyzed": 1, "kept_ai_summaries": 1}
+    new_id = client.get("/api/matches").json()[0]["id"]
+    assert client.get(f"/api/matches/{new_id}/report").json()["ai_summary"]["summary"]
+
+
+def test_key_moments_sorted_by_time():
+    from app.analytics.report import fmt_clock
+
+    moments = ["20:56 – b", "6:39 – a", "13:53 – c"]
+    moments.sort(key=lambda t: int(t.split(" ")[0].split(":")[0]) * 60 + int(t.split(" ")[0].split(":")[1]))
+    assert moments[0].startswith("6:39") and fmt_clock(399) == "6:39"

@@ -25,7 +25,10 @@ Le module `backend/app/live/compliance.py` est la source de vérité, exposée p
 | Source | Contenu | Moment |
 |---|---|---|
 | `replay_files` | `.StormReplay` terminés | Après la partie |
-| `battlelobby_file` | `replay.server.battlelobby` : liste des joueurs visibles à l'écran de chargement | Au chargement |
+| `game_process` | Présence du processus du jeu dans la liste des programmes (lancé / fermé), comme Discord ; jamais ouvert ni lu | En continu |
+| `battlelobby_file` | `replay.server.battlelobby` : joueurs et carte affichés à l'écran de chargement (carte via le fichier de carte du cache Battle.net, puis apprise) | Au chargement |
+| `screen_reading` | **Option, désactivée par défaut** : OCR local de 3 zones publiques du HUD (horloge, niveau de chaque équipe), jamais la mini-carte, aucune image conservée | Pendant la partie |
+| `public_websites` | Pages publiques Icy Veins (tier lists, guides), téléchargées hors partie, citées avec lien | Hors partie |
 | `user_input` | Carte, horloge, niveaux d'équipe affichés en haut de l'écran, camps observés | Pendant la partie |
 | `static_data` | Timings de carte, profils de héros, patch notes | Toujours |
 | `own_history` | Historique et agrégats issus des replays importés | Toujours |
@@ -38,7 +41,8 @@ Chaque état d'overlay renvoyé par l'API porte le champ `sources` listant celle
 |---|---|---|
 | Fichier `battlelobby` | Fichier temporaire écrit par le jeu, contenant des données également visibles à l'écran de chargement. Usage historique d'outils communautaires (affichage des profils au chargement). | Utilisé **uniquement** comme signal « partie lancée » et liste de BattleTags. Désactivable (`HOTS_WATCH_LIVE=false`). Pas de lookup des adversaires dans le MVP. |
 | Timers de camps adverses | Les camps capturés sont visibles sur la minimap ; deviner une capture non vue serait une information cachée. | Timer démarré **manuellement** par le joueur pour un camp qu'il a vu. Aucune inférence automatique. |
-| Lecture d'écran (OCR) du HUD — V2 | Lecture des pixels déjà affichés (horloge, niveaux d'équipe) sans toucher au processus. Pratique courante des overlays, mais Blizzard peut l'apprécier différemment. | Reporté en V2, **opt-in**, limité à une liste blanche de zones publiques (horloge, niveaux), jamais la minimap. Validation Blizzard préalable recommandée. |
+| Lecture d'écran (OCR) du HUD | Lecture des pixels déjà affichés (horloge, niveaux d'équipe) sans toucher au processus. Pratique courante des overlays, mais Blizzard peut l'apprécier différemment. | Implémentée en **option désactivée par défaut**, limitée à 3 zones publiques calibrées par le joueur, jamais la minimap, aucune image conservée. Validation Blizzard recommandée avant diffusion publique. |
+| Contenu Icy Veins | Pages publiques consultées comme le ferait un navigateur, pour l'usage personnel du joueur. | Téléchargement espacé (une page à la fois, tier lists 1×/jour, guides 1×/semaine), source et lien affichés. Demander l'accord d'Icy Veins avant une diffusion large. |
 | Statistiques des autres joueurs | Les replays contiennent les 10 joueurs. | Agrégats anonymisés (talents, héros). Pas de profilage nominatif d'autres joueurs dans le MVP. |
 | Raccourcis globaux | Ils capturent une combinaison au niveau OS sans rien envoyer au jeu. | Autorisé ; combinaisons peu utilisées en jeu, reconfigurables (backlog). |
 

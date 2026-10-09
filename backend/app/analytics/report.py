@@ -60,7 +60,11 @@ def build_facts(match: Match, me: MatchPlayer) -> dict:
     for side, label in (("allies", "Votre équipe"), ("enemies", "L'équipe adverse")):
         for lvl, clock in level_timings[side].items():
             key_moments.append(f"{clock} – {label} atteint le niveau {lvl}.")
-    key_moments.sort()
+    def _clock_key(text: str) -> int:
+        minutes, seconds = text.split(" ", 1)[0].split(":")
+        return int(minutes) * 60 + int(seconds)
+
+    key_moments.sort(key=_clock_key)
 
     score = me.score
     categories = {c: getattr(score, c) for c in CATEGORY_LABELS} if score else {}

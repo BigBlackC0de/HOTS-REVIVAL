@@ -93,12 +93,21 @@ class ReplayWatcher:
         if not folders:
             log.warning("Dossier de replays introuvable : %s", self.importer.folders)
             return
-        threading.Thread(target=self.importer.scan, daemon=True).start()  # rattrapage initial
+        threading.Thread(target=self._initial_scan, daemon=True).start()  # rattrapage initial
         self._observer = Observer()
         for folder in folders:
             self._observer.schedule(_Handler(self.importer), str(folder), recursive=False)
             log.info("Surveillance des replays : %s", folder)
         self._observer.start()
+
+    def _initial_scan(self) -> None:
+        from app.replay.reanalyze import mark_done, needs_reanalysis, reanalyze_all
+
+        if needs_reanalysis():
+            reanalyze_all(self.importer)  # analyseur mis à jour : on repasse sur tout l'historique
+        else:
+            self.importer.scan()
+            mark_done()
 
     def stop(self) -> None:
         if self._observer:

@@ -32,6 +32,17 @@ def status(request: Request, db: Session = Depends(get_db), settings: Settings =
     }
 
 
+@router.post("/reanalyze")
+def reanalyze(request: Request, settings: Settings = Depends(app_settings)) -> dict:
+    """Repasse tout l'historique dans l'analyseur (les résumés IA sont conservés)."""
+    from app.replay.reanalyze import reanalyze_all
+
+    importer = getattr(request.app.state, "replay_importer", None) or ReplayImporter(
+        settings.resolved_replay_dirs(), settings.resolved_toon_handles()
+    )
+    return reanalyze_all(importer)
+
+
 @router.post("/import", response_model=ImportResponse)
 def import_replays(
     body: ImportRequest, request: Request, settings: Settings = Depends(app_settings)

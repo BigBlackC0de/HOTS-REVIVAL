@@ -5,17 +5,21 @@ Contrairement à League of Legends (Live Client Data API), **Heroes of the Storm
 
 HOTS REVIVAL doit donc produire un overlay utile **à partir de ce que le joueur voit déjà** et de ce qui est **prévisible publiquement**.
 
+> **État (v0.2)** : implémenté. Cycle de partie automatique (processus du jeu, fichier de chargement, replay de fin), carte détectée automatiquement, timers mesurés sur replays réels puis recalibrés sur ceux du joueur, lecture d'écran optionnelle de l'horloge et des niveaux.
+
 ## 3.2 Ce que l'on sait sans tricher
 
 | Information | Source légitime | Fiabilité |
 |---|---|---|
+| Jeu lancé / fermé | Liste des processus (`HeroesOfTheStorm_x64.exe`) | Haute |
 | Une partie démarre | `replay.server.battlelobby` apparaît dans `%TEMP%\Heroes of the Storm\…` | Haute |
-| Joueurs de la partie | BattleTags du battlelobby (visibles à l'écran de chargement) | Haute |
-| Carte | Choix du joueur dans l'overlay (V2 : OCR de l'écran de chargement) | Haute |
+| Joueurs de la partie | BattleTags du battlelobby (visibles à l'écran de chargement) | Haute (vérifié sur fichier réel) |
+| Carte | Dernière dépendance `.s2ma` du battlelobby → identifiant lu dans le cache Battle.net, puis empreinte apprise à la fin de chaque partie | Haute |
+| Fin de partie | Nouveau `.StormReplay` enregistré → overlay vidé | Haute |
 | Héros joué | Choix du joueur / draft assistant | Haute |
-| Horloge de jeu | Synchronisation par le joueur (Ctrl+Shift+S à 0:00, ou saisie) puis horloge locale monotone | ±1–2 s |
+| Horloge de jeu | Lecture d'écran (option) ou synchronisation par le joueur (Ctrl+Shift+S à 0:00), puis horloge locale monotone. Horloge = temps depuis l'ouverture des portes (vérifié : champ `GameTime` des replays) | ±1–2 s |
 | Prochain objectif | Timings publics par carte + horloge ; recalage par « objectif terminé » (Ctrl+Shift+J) | Estimation |
-| Niveaux d'équipe | Visibles en haut de l'écran pour les deux équipes → saisis par raccourci (V2 : OCR) | Haute si saisis |
+| Niveaux d'équipe | Visibles en haut de l'écran pour les deux équipes → lecture d'écran (option) ou raccourcis | Haute si calibré |
 | Avantage de talent | Déduit des niveaux (paliers 1/4/7/10/13/16/20) | Haute |
 | Camps | Timer lancé par le joueur quand il voit une capture | Haute |
 | Build de talents | Statistiques des replays importés (winrate, popularité) | Selon volume |
@@ -55,16 +59,14 @@ Les alertes portent un identifiant stable : l'overlay ne les affiche qu'une fois
 **Pourquoi pas Claude en jeu ?** Latence (secondes), coût par partie, distraction, et surtout aucune donnée supplémentaire à lui fournir : les règles couvrent l'information disponible. Claude est réservé au draft, au rapport et au coaching.
 
 ## 3.5 Calibrage des timings
-Les timings de `backend/app/data/maps.json` sont des **valeurs indicatives** (`verified: false`) car Blizzard les a modifiés au fil des patchs. Plan :
-1. **MVP** : valeurs par défaut + recalage manuel « objectif terminé ».
-2. **Sprint 4** : calcul automatique de la médiane du premier objectif par carte à partir des évènements `objective` des replays importés (déjà stockés en base), écrasant les valeurs par défaut quand l'échantillon ≥ 20 parties.
-3. **V2** : agrégation communautaire (cloud) par build du jeu.
+Les replays contiennent l'horloge exacte des évènements de carte (noms vérifiés sur replays réels : `Boss Duel Started`, `Immortal Defeated`, `DragonKnightActivated`, `BraxisHoldoutMapEventComplete`, `VolskayaCapturePointComplete`, `GhostShipCaptured`, `WarheadJunctionNukesSpawned`…). Mesures de référence : Champs de l'Éternité, 1ᵉʳ duel à 2:30 puis ~2:05 après la fin du duel ; Site des ogives, 3:00 puis toutes les ~3:30.
+`analytics/timings.py` recalcule, pour chaque carte, la médiane du premier objectif et du délai entre objectifs sur les replays du joueur (≥ 3 parties) ; l'overlay affiche la source (« vos replays », « mesuré » ou « estimation »).
 
-## 3.6 V2 : lecture d'écran opt-in (OCR)
-- Capture d'écran (API `desktopCapturer`) **uniquement** de deux zones publiques : horloge et niveaux d'équipe.
-- OCR local (Tesseract WASM ou modèle de chiffres léger), 1 image / 2 s, aucune image conservée.
-- Supprime la saisie manuelle des niveaux et de l'horloge.
-- Désactivé par défaut, validation Blizzard préalable (voir 02-conformite-blizzard.md §2.4).
+## 3.6 Lecture d'écran (option)
+- Capture de l'écran principal (`desktopCapturer`) toutes les 2 s **pendant une partie uniquement**, découpe de 3 zones publiques (horloge, niveau allié, niveau adverse), OCR local (tesseract.js, données embarquées, chiffres uniquement).
+- Filtres : valeur lue deux fois de suite, niveaux croissants (+3 max), horloge cohérente avec le temps écoulé.
+- Calibrage par le joueur (Paramètres) sur une capture faite en jeu (Ctrl+Shift+K).
+- Désactivée par défaut (voir 02-conformite-blizzard.md §2.4).
 
 ## 3.7 Limites assumées
 - L'overlay n'est visible qu'en **plein écran fenêtré** (une fenêtre ne peut pas se superposer à un mode exclusif sans hook DirectX — interdit).

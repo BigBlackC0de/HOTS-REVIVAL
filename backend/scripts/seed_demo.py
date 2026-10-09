@@ -72,7 +72,7 @@ def fake_match(rng: random.Random, i: int) -> ParsedMatch:
 
 
 def main(n: int = 30) -> None:
-    init_engine(get_settings().database_url)
+    init_engine(get_settings().resolved_database_url())
     create_schema()
     rng = random.Random(42)
     with SessionLocal() as db:
